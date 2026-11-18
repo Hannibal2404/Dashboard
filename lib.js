@@ -32,7 +32,7 @@ const Liste = {
     });
     if (r.status === 401) throw new Error("Schlüssel ungültig oder abgelaufen");
     if (!r.ok) throw new Error("GitHub antwortet " + r.status);
-    return r.json();
+    return r.status === 204 ? null : r.json();
   },
 
   // Gist suchen oder anlegen. Ergebnis wird gemerkt.
@@ -57,13 +57,43 @@ const Liste = {
   },
 
   async load() {
-    const g = await this.api("/gists/" + await this.gistId());
+    const id = await this.gistId();
+    const g = await this.api("/gists/" + id);
     let data;
     try { data = JSON.parse(g.files[LIST_FILE].content); } catch { data = null; }
     if (!data || !Array.isArray(data.items)) data = { items: [] };
+    if (g.comments > 0) data = await this.ingestInbox(id, data);
     lsSet(LS_CACHE, JSON.stringify(data));
     return data;
   },
+
+  // Siri-Eingang: Der Kurzbefehl legt nur einen Kommentar am Gist an (eine einzige
+  // Anfrage, kein JSON-Basteln in Kurzbefehle). Das naechste Geraet, das die Liste
+  // laedt, uebernimmt die Kommentare als Eintraege und loescht sie danach.
+  async ingestInbox(id, data) {
+    if (this._ingesting) return data;
+    this._ingesting = true;
+    try {
+      const cs = await this.api(`/gists/${id}/comments?per_page=100`);
+      if (!cs.length) return data;
+      const parts = cs.flatMap(c => this.split(c.body || ""));
+      if (parts.length) {
+        this.applyAdd(data, parts);
+        await this.api("/gists/" + id, {
+          method: "PATCH",
+          body: JSON.stringify({ files: { [LIST_FILE]: { content: JSON.stringify(data, null, 1) } } }),
+        });
+      }
+      for (const c of cs) {
+        try { await this.api(`/gists/${id}/comments/${c.id}`, { method: "DELETE" }); } catch {}
+      }
+      return data;
+    } catch { return data; }
+    finally { this._ingesting = false; }
+  },
+
+  // Gist-ID fuer die Siri-Einrichtung
+  async inboxUrl() { return `https://api.github.com/gists/${await this.gistId()}/comments`; },
 
   // Immer frisch lesen, Aenderung anwenden, zurueckschreiben -- so ueberschreibt
   // ein Geraet nicht, was das andere gerade eingetragen hat.
@@ -81,25 +111,26 @@ const Liste = {
   // "Milch, Eier und Brot" -> drei Eintraege
   split(text) {
     return String(text).split(/\s*[,;\n]\s*|\s+und\s+|\s+&\s+/i)
-      .map(s => s.trim()).filter(Boolean)
+      .map(s => s.trim().replace(/[.!?]+$/, "").trim()).filter(Boolean)
       .map(s => s.charAt(0).toUpperCase() + s.slice(1));
   },
 
+  applyAdd(d, parts) {
+    d.freq = d.freq || {};
+    for (const t of parts) {
+      const key = t.toLowerCase();
+      const f = d.freq[key] || (d.freq[key] = { text: t, n: 0 });
+      f.n += 1; f.last = new Date().toISOString();
+      const same = d.items.find(i => i.text.toLowerCase() === key);
+      if (same) { same.done = false; continue; }      // schon drauf -> wieder offen
+      d.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                     text: f.text, done: false, added: new Date().toISOString() });
+    }
+  },
   add(text) {
     const parts = this.split(text);
     if (!parts.length) return Promise.resolve(this.cached());
-    return this.change(d => {
-      d.freq = d.freq || {};
-      for (const t of parts) {
-        const key = t.toLowerCase();
-        const f = d.freq[key] || (d.freq[key] = { text: t, n: 0 });
-        f.n += 1; f.last = new Date().toISOString();
-        const same = d.items.find(i => i.text.toLowerCase() === key);
-        if (same) { same.done = false; continue; }      // schon drauf -> wieder offen
-        d.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                       text: f.text, done: false, added: new Date().toISOString() });
-      }
-    });
+    return this.change(d => this.applyAdd(d, parts));
   },
 
   // Vorschlaege: oft gekaufte Artikel, die gerade nicht offen auf der Liste stehen.

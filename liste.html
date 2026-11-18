@@ -60,7 +60,7 @@ footer button{font-size:13px;background:none;border:0;color:var(--faint);text-de
 <div id="app"></div>
 <footer id="foot"></footer>
 
-<script src="lib.js?v=3"></script>
+<script src="lib.js?v=4"></script>
 <script>
 const $ = id => document.getElementById(id);
 let data = Liste.cached(), busy = 0;
@@ -93,7 +93,18 @@ function render(err) {
     <div class="chips">${chipsHtml(data, 8)}</div>
     ${open.length ? `<ul>${open.map(li).join("")}</ul>` : `<div class="empty">Alles da 🎉</div>`}
     ${done.length ? `<div class="sep"><span>Im Wagen (${done.length})</span><button id="clr">Entfernen</button></div><ul>${done.map(li).join("")}</ul>` : ""}`;
-  $("foot").innerHTML = `<button id="out">Verbindung auf diesem Gerät trennen</button>`;
+  $("foot").innerHTML = `<div id="siriBox"></div><button id="siri">Siri einrichten</button> · <button id="out">Verbindung auf diesem Gerät trennen</button>`;
+  $("siri").onclick = async () => {
+    let url; try { url = await Liste.inboxUrl(); } catch (e) { $("siriBox").innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    $("siriBox").innerHTML = `<div class="setup" style="text-align:left;margin-bottom:12px">
+      <p class="muted">Diese Adresse brauchst du im Kurzbefehl (Schritt „Inhalte von URL abrufen“):</p>
+      <input id="siriUrl" readonly value="${esc(url)}" style="font-size:13px">
+      <button class="primary" id="copyUrl">Adresse kopieren</button></div>`;
+    $("copyUrl").onclick = async () => {
+      try { await navigator.clipboard.writeText(url); $("copyUrl").textContent = "Kopiert ✓"; }
+      catch { $("siriUrl").select(); $("copyUrl").textContent = "Markiert – jetzt „Kopieren“ tippen"; }
+    };
+  };
   $("out").onclick = () => { if (confirm("Schlüssel von diesem Gerät löschen? Die Liste selbst bleibt erhalten.")) { Liste.logout(); data = { items: [] }; render(); } };
   if (focused) { $("nv").value = val; $("nv").focus(); }
   $("f").onsubmit = e => {
