@@ -165,6 +165,7 @@ const Liste = {
     const learned = Object.values(data.freq || {}).sort((a, b) => b.n - a.n || String(b.last).localeCompare(String(a.last)));
     const out = [], seen = new Set();
     for (const f of [...learned, ...STARTER.map(text => ({ text }))]) {
+      if (!f.text) continue;
       const k = f.text.toLowerCase();
       if (seen.has(k) || open.has(k) || (data.hidden || []).includes(k)) continue;
       seen.add(k); out.push(f.text);
@@ -218,18 +219,19 @@ function optimisticAdd(data, text) {
   }
 }
 
-// Vorschlags-Knoepfe: Tippen fuegt hinzu, lange druecken blendet den Vorschlag aus.
+// Vorschlags-Knoepfe: Tippen fuegt hinzu. Im Bearbeiten-Modus loescht Tippen den
+// Vorschlag (langes Druecken war auf iOS unzuverlaessig).
+let editMode = false;
 function chipsHtml(data, max) {
-  return Liste.suggestions(data, max).map(t => `<button type="button" class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  const toggle = `<button type="button" class="chip-edit">${editMode ? "Fertig" : "✎ Bearbeiten"}</button>`;
+  return toggle + Liste.suggestions(data, max).map(t =>
+    `<button type="button" class="chip${editMode ? " del" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
 }
-function bindChips(root, onAdd, onHide) {
-  root.querySelectorAll(".chip").forEach(b => {
-    let timer = null, long = false;
-    b.addEventListener("pointerdown", () => { long = false; timer = setTimeout(() => { long = true; onHide(b.dataset.t); }, 650); });
-    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, () => clearTimeout(timer)));
-    b.addEventListener("contextmenu", e => e.preventDefault());
-    b.addEventListener("click", () => { if (!long) onAdd(b.dataset.t); });
-  });
+function bindChips(root, onAdd, onHide, onToggle) {
+  root.querySelectorAll(".chip").forEach(b =>
+    b.addEventListener("click", () => editMode ? onHide(b.dataset.t) : onAdd(b.dataset.t)));
+  const t = root.querySelector(".chip-edit");
+  if (t) t.addEventListener("click", () => { editMode = !editMode; onToggle(); });
 }
 
 // Link zum Anlegen des Schluessels: klassischer Token, nur Recht "gist".

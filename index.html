@@ -106,6 +106,13 @@ button:active{transform:scale(.97)}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;font-size:15px;padding:6px 12px;border-radius:999px;background:transparent;border:1px dashed #4a4238;color:var(--muted)}
 .chip::before{content:"+ ";color:var(--warn-ink)}
+.chip.del{border-style:solid;border-color:rgba(208,59,59,.5);color:var(--ink)}
+.chip.del::before{content:"× ";color:var(--bad-ink)}
+.chip-edit{flex:none;font-size:14px;padding:6px 12px;border-radius:999px;color:var(--muted)}
+.items.edit li{border-color:rgba(208,59,59,.5)}
+.items.edit li .box{border:0;border-radius:0;width:auto;height:auto;opacity:1}
+.items.edit li .box::before{content:"×";color:var(--bad-ink);font-size:20px;line-height:1}
+.items.edit li.done{opacity:1}
 .items{list-style:none;margin-top:10px;overflow-y:auto;flex:1;min-height:0;
   display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;align-content:start}
 .items li{display:flex;align-items:center;gap:10px;background:var(--chip);border:1px solid var(--line);border-radius:12px;
@@ -197,7 +204,7 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
   <div class="row"><button id="setupCancel">Abbrechen</button><button class="primary" id="setupSave">Verbinden</button></div>
 </dialog>
 
-<script src="lib.js?v=5"></script>
+<script src="lib.js?v=6"></script>
 <script>
 const WETTER_URL = "https://hannibal2404.github.io/Wetter/dashboard.json";
 const TANKEN_URL = "https://hannibal2404.github.io/Tanken/dashboard.json";
@@ -343,7 +350,7 @@ function renderList(errMsg) {
   body.innerHTML = `
     <form class="add" id="addForm"><input id="newItem" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
     <div class="chips">${chipsHtml(listData, 16)}</div>
-    <ul class="items">${items.map(i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span></li>`).join("")}</ul>
+    <ul class="items${editMode ? " edit" : ""}">${items.map(i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span></li>`).join("")}</ul>
     <div class="list-foot"><span>${open ? open + " offen" : "Alles da"}</span>${done ? `<button id="clearDone">${done} Erledigte entfernen</button>` : ""}</div>`;
   if (focused) { $("newItem").value = val; $("newItem").focus(); }
   $("addForm").onsubmit = e => {
@@ -356,9 +363,11 @@ function renderList(errMsg) {
   };
   bindChips(body,
     t => { optimisticAdd(listData, t); renderList(); run(Liste.add(t)); },
-    t => { if (confirm(`„${t}“ nicht mehr vorschlagen?`)) { listData.hidden = [...(listData.hidden || []), t.toLowerCase()]; renderList(); run(Liste.hide(t)); } });
+    t => { listData.hidden = [...(listData.hidden || []), t.toLowerCase()]; renderList(); run(Liste.hide(t)); },
+    () => renderList());
   body.querySelectorAll(".items li").forEach(li => li.onclick = () => {
     const it = listData.items.find(x => x.id === li.dataset.id); if (!it || it.id.startsWith("tmp")) return;
+    if (editMode) { listData.items = listData.items.filter(x => x.id !== it.id); renderList(); run(Liste.remove(it.id)); return; }
     it.done = !it.done; renderList(); run(Liste.toggle(it.id));
   });
   if ($("clearDone")) $("clearDone").onclick = () => { listData.items = listData.items.filter(x => !x.done); renderList(); run(Liste.clearDone()); };
