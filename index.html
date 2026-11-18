@@ -69,7 +69,11 @@ button:active{transform:scale(.97)}
 .clock{grid-area:clock;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding:12px 22px}
 .time{font-family:var(--serif);font-size:clamp(56px,9.5vh,92px);font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .date{font-size:clamp(17px,2.6vh,22px);color:var(--muted);margin-top:4px}
-.now-wx{text-align:right}
+.now-wx{text-align:right;flex:none}
+.cd{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:center;text-align:center;font-size:clamp(15px,2.3vh,19px);color:var(--muted)}
+.cd div{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd b{color:var(--ink);font-weight:600}
+.cd .soon b{color:var(--warn-ink)}
 .now-wx .t{font-size:clamp(34px,6vh,52px);font-weight:600;line-height:1}
 .now-wx .s{font-size:14px;color:var(--muted);margin-top:4px}
 
@@ -81,6 +85,13 @@ button:active{transform:scale(.97)}
 .pill.gut,.pill.good{background:rgba(12,163,12,.16);color:var(--good-ink)}
 .pill.mittel,.pill.warn{background:rgba(250,178,25,.14);color:var(--warn-ink)}
 .pill.schlecht,.pill.bad{background:rgba(208,59,59,.16);color:var(--bad-ink)}
+.gassi.hl-good{animation:hlGood 2.4s ease-in-out infinite}
+.gassi.hl-rain{animation:hlRain 2.4s ease-in-out infinite}
+@keyframes hlGood{50%{border-color:var(--good);box-shadow:0 0 0 2px rgba(12,163,12,.35),0 0 24px rgba(12,163,12,.25)}}
+@keyframes hlRain{50%{border-color:var(--warn);box-shadow:0 0 0 2px rgba(250,178,25,.35),0 0 24px rgba(250,178,25,.22)}}
+.alert{font-size:14px;font-weight:600;margin-top:8px;border-radius:8px;padding:4px 10px;align-self:flex-start}
+.alert.good{background:rgba(12,163,12,.16);color:var(--good-ink)}
+.alert.rain{background:rgba(250,178,25,.14);color:var(--warn-ink)}
 .strip{display:flex;gap:2px;margin-top:auto;padding-top:12px;height:34px;position:relative}
 .strip i{flex:1;border-radius:3px;background:var(--line)}
 .strip i.gut{background:var(--good)}.strip i.mittel{background:var(--warn)}.strip i.schlecht{background:var(--bad)}
@@ -106,6 +117,8 @@ button:active{transform:scale(.97)}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;font-size:15px;padding:6px 12px;border-radius:999px;background:transparent;border:1px dashed #4a4238;color:var(--muted)}
 .chip::before{content:"+ ";color:var(--warn-ink)}
+.chip.due{border-style:solid;border-color:rgba(250,178,25,.55);color:var(--ink)}
+.chip.due::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:6px;vertical-align:middle}
 .chip.del{border-style:solid;border-color:rgba(208,59,59,.5);color:var(--ink)}
 .chip.del::before{content:"× ";color:var(--bad-ink)}
 .chip-edit{flex:none;font-size:14px;padding:6px 12px;border-radius:999px;color:var(--muted)}
@@ -118,6 +131,9 @@ button:active{transform:scale(.97)}
 .items li{display:flex;align-items:center;gap:10px;background:var(--chip);border:1px solid var(--line);border-radius:12px;
   padding:9px 12px;font-size:17px;cursor:pointer;min-width:0}
 .items li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.items li .tag{flex:none;margin-left:auto;font-style:normal;font-size:13px;font-weight:600;color:var(--warn-ink);
+  background:rgba(250,178,25,.12);border-radius:6px;padding:2px 6px}
+.items li.done .tag{display:none}
 .items li .box{flex:none;width:20px;height:20px;border-radius:6px;border:2px solid var(--muted)}
 .items li.done{opacity:.45}
 .items li.done span{text-decoration:line-through}
@@ -170,6 +186,7 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
       <div class="time" id="time">--:--</div>
       <div class="date" id="date"></div>
     </div>
+    <div class="cd" id="cd"></div>
     <div class="now-wx" id="nowWx"></div>
   </section>
 
@@ -204,7 +221,7 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
   <div class="row"><button id="setupCancel">Abbrechen</button><button class="primary" id="setupSave">Verbinden</button></div>
 </dialog>
 
-<script src="lib.js?v=6"></script>
+<script src="lib.js?v=7"></script>
 <script>
 const WETTER_URL = "https://hannibal2404.github.io/Wetter/dashboard.json";
 const TANKEN_URL = "https://hannibal2404.github.io/Tanken/dashboard.json";
@@ -220,6 +237,14 @@ function tickClock() {
   const d = new Date();
   $("time").textContent = hhmm(d);
   $("date").textContent = `${WT[d.getDay()]}, ${d.getDate()}. ${MO[d.getMonth()]}`;
+  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) renderCountdowns();
+}
+
+/* ---------- Countdowns (aus der Einkaufslisten-Datei, gepflegt am Handy) ---------- */
+const EV_DAYS = 60;      // nur zeigen, was in den naechsten 60 Tagen ansteht
+function renderCountdowns() {
+  const ev = upcomingEvents(listData, EV_DAYS).slice(0, 2);
+  $("cd").innerHTML = ev.map(e => `<div class="${e.days <= 2 ? "soon" : ""}">${esc(e.name)}${e.age ? ` (${e.age})` : ""} · <b>${daysText(e.days)}</b></div>`).join("");
 }
 
 /* ---------- Gassi ---------- */
@@ -268,6 +293,17 @@ function renderGassi(d) {
     rain_soon: `🌧️ Regen gegen ${o.time}`, dry_soon: `🌤️ Regenpause ab ${o.time}`,
     rain_hold: "🌧️ Regen hält an", dry: "✅ Erst mal trocken" }[o.kind] || "";
 
+  // Hinweis: gutes Fenster beginnt gerade / in 30 min, oder Regen zieht auf
+  let alert = null;
+  const mins = H * 60 + M;
+  const soonGood = tw.find(w => w.rating === "gut" && w.start * 60 - mins > 0 && w.start * 60 - mins <= 30);
+  if (cur && cur.rating === "gut" && cur.start === H && M < 20 && !(tw.find(w => w.end === H - 1 && w.rating === "gut")))
+    alert = { cls: "good", text: "🐾 Gutes Fenster hat begonnen" };
+  else if (soonGood) alert = { cls: "good", text: `🐾 In ${soonGood.start * 60 - mins} min gutes Fenster` };
+  if (rainSoon != null) alert = { cls: "rain", text: rainSoon <= 5 ? "🌧️ Regen setzt gleich ein" : `🌧️ Regen in ~${rainSoon} min` };
+  $("gassi").classList.toggle("hl-good", !!alert && alert.cls === "good");
+  $("gassi").classList.toggle("hl-rain", !!alert && alert.cls === "rain");
+
   // Stundenstreifen 5–22 Uhr
   const rateAt = h => { const w = tw.find(w => w.start <= h && h <= w.end); return w ? w.rating : ""; };
   let strip = "";
@@ -276,6 +312,7 @@ function renderGassi(d) {
   $("gassiBody").className = "";
   $("gassiBody").style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
   $("gassiBody").innerHTML = `
+    ${alert ? `<div class="alert ${alert.cls}">${esc(alert.text)}</div>` : ""}
     <div class="big-v">${esc(head)}</div>
     <span class="pill ${rating}">${{ gut: "gut", mittel: "mittel", schlecht: "schlecht" }[rating]}</span>
     <div class="sub">${esc(sub)}${wxLine ? "<br>" + wxLine : ""}${oTxt ? "<br>" + oTxt : ""}</div>
@@ -323,13 +360,30 @@ async function loadJson(url) {
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+// Regen in den naechsten 30 Minuten? (Open-Meteo, 15-Minuten-Werte; frei, ohne Schluessel)
+// rainSoon = Minuten bis Regenbeginn, null = trocken bleibt / regnet schon
+let rainSoon = null;
+async function loadRain() {
+  try {
+    const d = await loadJson(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+      "&minutely_15=precipitation&past_minutely_15=2&forecast_minutely_15=6&timezone=Europe%2FBerlin");
+    const t = d.minutely_15.time.map(x => new Date(x).getTime()), p = d.minutely_15.precipitation, now = Date.now();
+    let curI = -1; t.forEach((x, i) => { if (x <= now) curI = i; });
+    rainSoon = null;
+    if (curI < 0 || p[curI] >= 0.1) return;            // regnet schon -> kein "gleich Regen"
+    for (let i = curI + 1; i < t.length && t[i] <= now + 30 * 6e4; i++)
+      if (p[i] >= 0.1) { rainSoon = Math.max(0, Math.round((t[i] - now) / 6e4)); break; }
+  } catch { rainSoon = null; }
+}
 let lastGassi = null;
 setInterval(() => { if (lastGassi) renderGassi(lastGassi); }, 60 * 1000);  // Countdown/Streifen minütlich
 async function refreshData() {
+  await loadRain();
   try { renderGassi(lastGassi = await loadJson(WETTER_URL)); }
   catch { $("gassiStale").textContent = "nicht erreichbar"; if ($("gassiBody").textContent === "Lade …") $("gassiBody").textContent = "Noch keine Daten"; }
   try { renderTanken(await loadJson(TANKEN_URL)); }
   catch { $("tankStale").textContent = "nicht erreichbar"; if ($("tankBody").textContent === "Lade …") $("tankBody").textContent = "Noch keine Daten"; }
+  await Angebote.load(); renderList();
 }
 
 /* ---------- Einkaufsliste ---------- */
@@ -342,6 +396,7 @@ function renderList(errMsg) {
     $("openSetup").onclick = openSetup;
     return;
   }
+  renderCountdowns();
   $("listState").innerHTML = errMsg ? `<span class="err">${esc(errMsg)}</span>` : "";
   const items = [...listData.items].sort((a, b) => a.done - b.done);
   const open = items.filter(i => !i.done).length, done = items.length - open;
@@ -350,7 +405,11 @@ function renderList(errMsg) {
   body.innerHTML = `
     <form class="add" id="addForm"><input id="newItem" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
     <div class="chips">${chipsHtml(listData, 16)}</div>
-    <ul class="items${editMode ? " edit" : ""}">${items.map(i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span></li>`).join("")}</ul>
+    <ul class="items${editMode ? " edit" : ""}">${items.map(i => {
+      const o = Angebote.match(i.text);
+      const tag = o && !editMode ? `<em class="tag" title="${esc(o.name + " · " + o.price)}">🏷 ${esc(o.price.replace(/\s*€/, " €"))}</em>` : "";
+      return `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span>${tag}</li>`;
+    }).join("")}</ul>
     <div class="list-foot"><span>${open ? open + " offen" : "Alles da"}</span>${done ? `<button id="clearDone">${done} Erledigte entfernen</button>` : ""}</div>`;
   if (focused) { $("newItem").value = val; $("newItem").focus(); }
   $("addForm").onsubmit = e => {

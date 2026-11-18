@@ -35,6 +35,8 @@ h1 small{font-family:var(--sans);font-size:14px;font-weight:400;color:var(--mute
 .chip{font-size:15px;padding:6px 12px;border-radius:999px;background:transparent;border:1px dashed #4a4238;color:var(--muted);
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .chip::before{content:"+ ";color:var(--warn-ink)}
+.chip.due{border-style:solid;border-color:rgba(250,178,25,.55);color:var(--ink)}
+.chip.due::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warn);margin-left:6px;vertical-align:middle}
 .chip.del{border-style:solid;border-color:rgba(208,59,59,.5);color:var(--ink)}
 .chip.del::before{content:"× ";color:var(--bad-ink)}
 .chip-edit{font-size:14px;padding:6px 12px;border-radius:999px;color:var(--muted)}
@@ -44,6 +46,20 @@ li .box{flex:none;width:24px;height:24px;border-radius:7px;border:2px solid var(
 li.done{opacity:.45} li.done .t{text-decoration:line-through}
 li.done .box{background:var(--good);border-color:var(--good)}
 li .t{flex:1;min-width:0;overflow-wrap:anywhere}
+li .offer{display:block;font-size:13px;color:var(--warn-ink);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+li.done .offer{display:none}
+.ev{margin-top:22px}
+.ev summary{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;list-style:none;cursor:pointer}
+.ev summary::-webkit-details-marker{display:none}
+.ev ul{margin-top:8px}
+.ev li{font-size:16px;padding:10px 14px}
+.ev li .d{color:var(--muted);font-size:14px;white-space:nowrap}
+.ev form{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.ev form input[type=text]{flex:1 1 100%;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
+.ev form input[type=date]{flex:1;min-width:0;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px}
+.ev form label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:15px}
+.ev form button{background:var(--warn);color:#1b1408;border:0;font-weight:700}
+.ev .hint{font-size:13px;color:var(--faint);margin-top:6px}
 li .x{background:none;border:0;color:var(--faint);font-size:22px;padding:0 4px}
 .sep{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:18px 0 6px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
 .sep button{font-size:13px;letter-spacing:0;text-transform:none;padding:5px 10px;font-weight:400}
@@ -63,10 +79,10 @@ footer button{font-size:13px;background:none;border:0;color:var(--faint);text-de
 <div id="app"></div>
 <footer id="foot"></footer>
 
-<script src="lib.js?v=6"></script>
+<script src="lib.js?v=7"></script>
 <script>
 const $ = id => document.getElementById(id);
-let data = Liste.cached(), busy = 0;
+let data = Liste.cached(), busy = 0, evOpen = false;
 
 function render(err) {
   const app = $("app");
@@ -90,12 +106,36 @@ function render(err) {
   const open = data.items.filter(i => !i.done), done = data.items.filter(i => i.done);
   const focused = document.activeElement && document.activeElement.id === "nv";
   const val = focused ? $("nv").value : "";
-  const li = i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span class="t">${esc(i.text)}</span><button class="x" aria-label="Löschen">×</button></li>`;
+  const li = i => {
+    const o = Angebote.match(i.text);
+    const off = o ? `<small class="offer">🏷 ${esc(o.price)} · ${esc(o.name)}</small>` : "";
+    return `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span class="t">${esc(i.text)}${off}</span><button class="x" aria-label="Löschen">×</button></li>`;
+  };
+  const evs = upcomingEvents(data);
+  const fmtD = e => e.when.toLocaleDateString("de-DE", { day: "numeric", month: "short", ...(e.yearly ? {} : { year: "numeric" }) });
   app.innerHTML = `
     <form class="add" id="f"><input id="nv" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
     <div class="chips">${chipsHtml(data, 8)}</div>
     ${open.length ? `<ul>${open.map(li).join("")}</ul>` : `<div class="empty">Alles da 🎉</div>`}
-    ${done.length ? `<div class="sep"><span>Im Wagen (${done.length})</span><button id="clr">Entfernen</button></div><ul>${done.map(li).join("")}</ul>` : ""}`;
+    ${done.length ? `<div class="sep"><span>Im Wagen (${done.length})</span><button id="clr">Entfernen</button></div><ul>${done.map(li).join("")}</ul>` : ""}
+    <details class="ev" id="evBox"${evOpen ? " open" : ""}><summary>📅 Countdowns aufs iPad (${evs.length}) ▾</summary>
+      ${evs.length ? `<ul>${evs.map(e => `<li data-ev="${e.id}"><span class="t">${esc(e.name)}${e.age ? ` (${e.age})` : ""}<br><span class="d">${fmtD(e)}${e.yearly ? " · jährlich" : ""} · ${daysText(e.days)}</span></span><button class="x" aria-label="Löschen">×</button></li>`).join("")}</ul>` : ""}
+      <form id="evForm"><input type="text" id="evName" placeholder="z. B. 🎂 Mama oder ✈️ Urlaub" autocomplete="off">
+        <input type="date" id="evDate" required><label><input type="checkbox" id="evYear"> jährlich</label><button>Hinzufügen</button></form>
+      <p class="hint">Das iPad zeigt unter der Uhr, was in den nächsten 60 Tagen ansteht. „Jährlich“ für Geburtstage: dann mit Geburtsjahr eintragen, das Alter erscheint dahinter.</p>
+    </details>`;
+  $("evBox").ontoggle = () => { evOpen = $("evBox").open; };
+  $("evForm").onsubmit = e => {
+    e.preventDefault();
+    const n = $("evName").value.trim(), d = $("evDate").value, y = $("evYear").checked;
+    if (!n || !d) return;
+    data.events = [...(data.events || []), { id: "tmp" + Date.now(), name: n, date: d, yearly: y }];
+    render(); go(Liste.addEvent(n, d, y));
+  };
+  app.querySelectorAll("li[data-ev]").forEach(el => el.querySelector(".x").onclick = () => {
+    const id = el.dataset.ev; if (id.startsWith("tmp")) return;
+    data.events = (data.events || []).filter(e => e.id !== id); render(); go(Liste.removeEvent(id));
+  });
   $("foot").innerHTML = `<div id="siriBox"></div><button id="siri">Siri einrichten</button> · <button id="out">Verbindung auf diesem Gerät trennen</button>`;
   $("siri").onclick = async () => {
     let url; try { url = await Liste.inboxUrl(); } catch (e) { $("siriBox").innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
@@ -120,7 +160,7 @@ function render(err) {
     t => { optimisticAdd(data, t); render(); go(Liste.add(t)); },
     t => { data.hidden = [...(data.hidden || []), t.toLowerCase()]; render(); go(Liste.hide(t)); },
     () => render());
-  app.querySelectorAll("li").forEach(el => {
+  app.querySelectorAll("li[data-id]").forEach(el => {
     const id = el.dataset.id;
     el.onclick = () => { const it = data.items.find(x => x.id === id); if (!it || id.startsWith("tmp")) return; it.done = !it.done; render(); go(Liste.toggle(id)); };
     el.querySelector(".x").onclick = ev => { ev.stopPropagation(); if (id.startsWith("tmp")) return; data.items = data.items.filter(x => x.id !== id); render(); go(Liste.remove(id)); };
@@ -131,6 +171,7 @@ async function go(p) { busy++; $("state").textContent = "…"; try { data = awai
 function refresh() { if (Liste.token() && !busy && !document.hidden) go(Liste.load()); }
 
 render(); refresh();
+Angebote.load().then(() => { if (!busy) render(); });
 setInterval(refresh, 30 * 1000);
 document.addEventListener("visibilitychange", refresh);
 watchForUpdates(30);

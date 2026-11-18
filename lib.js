@@ -145,7 +145,13 @@ const Liste = {
     for (const t of parts) {
       const key = t.toLowerCase();
       const f = d.freq[key] || (d.freq[key] = { text: t, n: 0 });
-      f.n += 1; f.last = new Date().toISOString();
+      f.n += 1;
+      // Kaufrhythmus: hoechstens ein Eintrag pro Tag, die letzten 10 Tage merken
+      const nowIso = new Date().toISOString();
+      f.hist = f.hist || (f.last ? [f.last] : []);
+      if (!f.hist.length || f.hist[f.hist.length - 1].slice(0, 10) !== nowIso.slice(0, 10)) f.hist.push(nowIso);
+      f.hist = f.hist.slice(-10);
+      f.last = nowIso;
       const same = d.items.find(i => i.text.toLowerCase() === key);
       if (same) { same.done = false; continue; }      // schon drauf -> wieder offen
       d.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -160,15 +166,17 @@ const Liste = {
 
   // Vorschlaege: oft gekaufte Artikel, die gerade nicht offen auf der Liste stehen.
   // Bis die Liste genug gelernt hat, fuellen Grundnahrungsmittel auf.
+  // Faellige Artikel (Kaufrhythmus erreicht) stehen vorne, Rueckgabe [{text, due}].
   suggestions(data, max = 14) {
     const open = new Set(data.items.filter(i => !i.done).map(i => i.text.toLowerCase()));
-    const learned = Object.values(data.freq || {}).sort((a, b) => b.n - a.n || String(b.last).localeCompare(String(a.last)));
+    const learned = Object.values(data.freq || {}).map(f => ({ ...f, due: isDue(f) }))
+      .sort((a, b) => b.due - a.due || b.n - a.n || String(b.last).localeCompare(String(a.last)));
     const out = [], seen = new Set();
     for (const f of [...learned, ...STARTER.map(text => ({ text }))]) {
       if (!f.text) continue;
       const k = f.text.toLowerCase();
       if (seen.has(k) || open.has(k) || (data.hidden || []).includes(k)) continue;
-      seen.add(k); out.push(f.text);
+      seen.add(k); out.push({ text: f.text, due: !!f.due });
       if (out.length >= max) break;
     }
     return out;
@@ -180,6 +188,13 @@ const Liste = {
       if (d.freq) delete d.freq[k];
     });
   },
+  addEvent(name, date, yearly) {
+    return this.change(d => {
+      d.events = d.events || [];
+      d.events.push({ id: Date.now().toString(36), name: name.trim(), date, yearly: !!yearly });
+    });
+  },
+  removeEvent(id) { return this.change(d => { d.events = (d.events || []).filter(e => e.id !== id); }); },
   toggle(id) { return this.change(d => { const i = d.items.find(x => x.id === id); if (i) i.done = !i.done; }); },
   remove(id) { return this.change(d => { d.items = d.items.filter(x => x.id !== id); }); },
   clearDone() { return this.change(d => { d.items = d.items.filter(x => !x.done); }); },
@@ -224,9 +239,88 @@ function optimisticAdd(data, text) {
 let editMode = false;
 function chipsHtml(data, max) {
   const toggle = `<button type="button" class="chip-edit">${editMode ? "Fertig" : "✎ Bearbeiten"}</button>`;
-  return toggle + Liste.suggestions(data, max).map(t =>
-    `<button type="button" class="chip${editMode ? " del" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  return toggle + Liste.suggestions(data, max).map(s =>
+    `<button type="button" class="chip${editMode ? " del" : ""}${s.due && !editMode ? " due" : ""}" data-t="${esc(s.text)}"` +
+    `${s.due ? ' title="Wird laut Kaufrhythmus bald fällig"' : ""}>${esc(s.text)}</button>`).join("");
 }
+
+// Kaufrhythmus: typischer Abstand (Median) aus mind. 3 Kaeufen. Faellig, wenn der
+// letzte Kauf mindestens 90 % dieses Abstands zurueckliegt.
+function buyInterval(f) {
+  const h = (f.hist || []).map(x => new Date(x).getTime()).filter(x => !isNaN(x));
+  if (h.length < 3) return null;
+  const gaps = h.slice(1).map((t, i) => (t - h[i]) / 864e5).sort((a, b) => a - b);
+  const med = gaps[Math.floor(gaps.length / 2)];
+  return med >= 1 ? med : null;
+}
+function isDue(f, now = Date.now()) {
+  const iv = buyInterval(f);
+  if (!iv || !f.hist) return false;
+  const since = (now - new Date(f.hist[f.hist.length - 1]).getTime()) / 864e5;
+  return since >= iv * 0.9 && since <= iv * 3;   // viel zu lange her = wohl nicht mehr gekauft
+}
+
+// ---------- REWE-Angebote (aus dem Wochenlauf des REWE-Projekts) ----------
+const OFFERS_URL = "https://hannibal2404.github.io/Rewe-App/angebote.json";
+const Angebote = {
+  data: (() => { try { return JSON.parse(lsGet("dash_offers")); } catch { return null; } })(),
+  async load() {
+    try {
+      const r = await fetch(OFFERS_URL + "?t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) return this.data;
+      this.data = await r.json(); this._memo = {};
+      lsSet("dash_offers", JSON.stringify(this.data));
+    } catch {}
+    return this.data;
+  },
+  valid() {
+    const d = this.data; if (!d || !Array.isArray(d.offers)) return false;
+    const today = new Date().toLocaleDateString("sv");          // JJJJ-MM-TT
+    return (!d.until || d.until >= today) && (!d.from || d.from <= today);
+  },
+  // Guenstigstes passendes Angebot zum Listeneintrag, sonst null
+  match(text) {
+    if (!this.valid()) return null;
+    this._memo = this._memo || {};
+    const key = text.toLowerCase().trim();
+    if (key in this._memo) return this._memo[key];
+    const words = key.split(/[^a-zäöüß]+/).filter(w => w.length >= 3);
+    let best = null;
+    if (words.length) for (const o of this.data.offers) {
+      const toks = o.name.toLowerCase().split(/[^a-zäöüß]+/).filter(Boolean);
+      if (words.every(w => toks.some(t => wordHit(t, w))) && (!best || o.cents < best.cents)) best = o;
+    }
+    return (this._memo[key] = best);
+  },
+};
+// "milch" passt zu "vollmilch", "zwiebeln" zu "gemüsezwiebel", aber "eis" nicht zu "reis"
+function stem(w) { const s = w.replace(/(en|n|e|s)$/, ""); return s.length >= 3 ? s : w; }
+// Zusammensetzungen, die etwas ganz anderes meinen
+const NOT_A = ["buttermilch", "kokosmilch", "kondensmilch", "sonnenmilch", "reinigungsmilch", "körpermilch",
+               "milchreis", "eiswürfel", "pfefferbeißer"];
+function wordHit(tok, w) {
+  if (tok === w || stem(tok) === stem(w)) return true;
+  if (NOT_A.includes(tok)) return false;
+  if (w.length >= 6 && /^(filets?|stücke?|fleisch)$/.test(tok.slice(w.length)) && tok.startsWith(w)) return true;
+  return (w.length >= 4 && tok.endsWith(w)) || (stem(w).length >= 4 && stem(tok).endsWith(stem(w)));
+}
+
+// ---------- Countdowns ----------
+// Naechstes Datum (jaehrlich wiederkehrend oder einmalig) und Tage bis dahin
+function nextEvent(e, now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [y, m, d] = String(e.date).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  let t = new Date(e.yearly ? today.getFullYear() : y, m - 1, d);
+  if (e.yearly && t < today) t = new Date(today.getFullYear() + 1, m - 1, d);
+  const days = Math.round((t - today) / 864e5);
+  return days < 0 ? null : { ...e, when: t, days, age: e.yearly && y > 1900 ? t.getFullYear() - y : null };
+}
+function upcomingEvents(data, withinDays = 9999) {
+  return (data.events || []).map(e => nextEvent(e)).filter(e => e && e.days <= withinDays)
+    .sort((a, b) => a.days - b.days);
+}
+function daysText(n) { return n === 0 ? "heute" : n === 1 ? "morgen" : n === 2 ? "übermorgen" : `in ${n} Tagen`; }
 function bindChips(root, onAdd, onHide, onToggle) {
   root.querySelectorAll(".chip").forEach(b =>
     b.addEventListener("click", () => editMode ? onHide(b.dataset.t) : onAdd(b.dataset.t)));
