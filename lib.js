@@ -289,6 +289,7 @@ const Angebote = {
     const words = key.split(/[^a-zäöüß]+/).filter(w => w.length >= 3);
     let best = null;
     if (words.length) for (const o of this.data.offers) {
+      if (NOT_OFFER.test(o.name) && !words.some(w => NOT_OFFER.test(w))) continue;
       const toks = o.name.toLowerCase().split(/[^a-zäöüß]+/).filter(Boolean);
       if (words.every(w => toks.some(t => wordHit(t, w))) && (!best || o.cents < best.cents)) best = o;
     }
@@ -299,7 +300,9 @@ const Angebote = {
 function stem(w) { const s = w.replace(/(en|n|e|s)$/, ""); return s.length >= 3 ? s : w; }
 // Zusammensetzungen, die etwas ganz anderes meinen
 const NOT_A = ["buttermilch", "kokosmilch", "kondensmilch", "sonnenmilch", "reinigungsmilch", "körpermilch",
-               "milchreis", "eiswürfel", "pfefferbeißer"];
+               "milchreis", "eiswürfel", "pfefferbeißer", "seelachs"];
+// Fertiggerichte und Wuerzware: "Nudeln" soll keine Terrine finden, "Paprika" keine Salami
+const NOT_OFFER = /terrine|rahmsauce|sauce|soße|fix|würzmischung|gewürz|kolbasz|salami|fertiggericht/i;
 function wordHit(tok, w) {
   if (tok === w || stem(tok) === stem(w)) return true;
   if (NOT_A.includes(tok)) return false;
