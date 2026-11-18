@@ -46,7 +46,8 @@ li .box{flex:none;width:24px;height:24px;border-radius:7px;border:2px solid var(
 li.done{opacity:.45} li.done .t{text-decoration:line-through}
 li.done .box{background:var(--good);border-color:var(--good)}
 li .t{flex:1;min-width:0;overflow-wrap:anywhere}
-li .offer{display:block;font-size:13px;color:var(--warn-ink);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+li .offer{display:block;font-size:13px;color:var(--warn-ink);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 0}
+li .offer b{font-weight:600;background:rgba(250,178,25,.15);border-radius:6px;padding:0 5px}
 li.done .offer{display:none}
 .ev{margin-top:22px}
 .ev summary{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;list-style:none;cursor:pointer}
@@ -80,7 +81,7 @@ footer button{font-size:13px;background:none;border:0;color:var(--faint);text-de
 <div id="app"></div>
 <footer id="foot"></footer>
 
-<script src="lib.js?v=9"></script>
+<script src="lib.js?v=10"></script>
 <script>
 const $ = id => document.getElementById(id);
 let data = Liste.cached(), busy = 0, evOpen = false;
@@ -108,8 +109,9 @@ function render(err) {
   const focused = document.activeElement && document.activeElement.id === "nv";
   const val = focused ? $("nv").value : "";
   const li = i => {
-    const o = Angebote.match(i.text);
-    const off = o ? `<small class="offer">🏷 ${esc(o.price)} · ${esc(o.name)}</small>` : "";
+    const r = Angebote.forItem(i.text, data), o = r.shown[0];
+    const more = r.shown.length > 1 ? ` <b>+${r.shown.length - 1}</b>` : "";
+    const off = o ? `<small class="offer" data-item="${esc(i.text)}">🏷 ${esc(o.price)} · ${esc(o.name)}${more}</small>` : "";
     return `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span class="t">${esc(i.text)}${off}</span><button class="x" aria-label="Löschen">×</button></li>`;
   };
   const evs = upcomingEvents(data);
@@ -161,6 +163,11 @@ function render(err) {
     t => { optimisticAdd(data, t); render(); go(Liste.add(t)); },
     t => { data.hidden = [...(data.hidden || []), t.toLowerCase()]; render(); go(Liste.hide(t)); },
     () => render());
+  app.querySelectorAll(".offer").forEach(t => t.onclick = ev => {
+    ev.stopPropagation();
+    const item = t.dataset.item;
+    showOfferSheet(item, () => data, (k, m) => { applyOfferPref(data, item, k, m); render(); go(Liste.setOfferPref(item, k, m)); });
+  });
   app.querySelectorAll("li[data-id]").forEach(el => {
     const id = el.dataset.id;
     el.onclick = () => { const it = data.items.find(x => x.id === id); if (!it || id.startsWith("tmp")) return; it.done = !it.done; render(); go(Liste.toggle(id)); };

@@ -196,6 +196,7 @@ const Liste = {
       d.events.push(e);
     });
   },
+  setOfferPref(item, okey, mode) { return this.change(d => applyOfferPref(d, item, okey, mode)); },
   removeEvent(id) { return this.change(d => { d.events = (d.events || []).filter(e => e.id !== id); }); },
   toggle(id) { return this.change(d => { const i = d.items.find(x => x.id === id); if (i) i.done = !i.done; }); },
   remove(id) { return this.change(d => { d.items = d.items.filter(x => x.id !== id); }); },
@@ -280,29 +281,124 @@ const Angebote = {
     const today = new Date().toLocaleDateString("sv");          // JJJJ-MM-TT
     return (!d.until || d.until >= today) && (!d.from || d.from <= today);
   },
-  // Guenstigstes passendes Angebot zum Listeneintrag, sonst null
-  match(text) {
-    if (!this.valid()) return null;
+  // Alle passenden Angebote zum Listeneintrag, guenstigste zuerst (ohne Nutzer-Auswahl)
+  all(text) {
+    if (!this.valid()) return [];
     this._memo = this._memo || {};
     const key = text.toLowerCase().trim();
     if (key in this._memo) return this._memo[key];
     const words = key.split(/[^a-zäöüß]+/).filter(w => w.length >= 3);
-    let best = null;
+    const out = [], seen = new Set();
     if (words.length) for (const o of this.data.offers) {
       if (NOT_OFFER.test(o.name) && !words.some(w => NOT_OFFER.test(w))) continue;
       const toks = o.name.toLowerCase().split(/[^a-zäöüß]+/).filter(Boolean);
-      if (words.every(w => toks.some(t => wordHit(t, w))) && (!best || o.cents < best.cents)) best = o;
+      if (!words.every(w => toks.some(t => wordHit(t, w)))) continue;
+      const k = offerKey(o);
+      if (seen.has(k)) continue;                       // gleiches Produkt in zwei Kategorien
+      seen.add(k); out.push(o);
     }
-    return (this._memo[key] = best);
+    out.sort((a, b) => a.cents - b.cents);
+    return (this._memo[key] = out);
   },
+  // Was am Eintrag angezeigt wird: mit "Kauf ich"-Auswahl nur diese Produkte,
+  // sonst alle ausser den ausgeblendeten.
+  forItem(text, data) {
+    const all = this.all(text);
+    const pref = ((data && data.offerPrefs) || {})[text.toLowerCase().trim()] || {};
+    const pick = pref.pick || [], hide = pref.hide || [];
+    const shown = pick.length ? all.filter(o => pick.includes(offerKey(o))) : all.filter(o => !hide.includes(offerKey(o)));
+    return { shown, all, pick, hide };
+  },
+  match(text, data) { return this.forItem(text, data).shown[0] || null; },
 };
+// Produkt-Schluessel ohne Mengen, damit eine andere Packungsgroesse wiedererkannt wird
+function offerKey(o) {
+  return String(o.name).toLowerCase().replace(/\d+([.,]\d+)?\s*(x\s*)?(g|kg|ml|l|stück|stk|er)?(?![a-zäöüß])/g, " ")
+    .replace(/[^a-zäöüß ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+// "Kauf ich" / "Ausblenden" je Listeneintrag; mode = "pick" | "hide" | null (zuruecksetzen)
+function applyOfferPref(d, item, okey, mode) {
+  const k = item.toLowerCase().trim();
+  d.offerPrefs = d.offerPrefs || {};
+  const p = d.offerPrefs[k] || (d.offerPrefs[k] = { pick: [], hide: [] });
+  p.pick = (p.pick || []).filter(x => x !== okey); p.hide = (p.hide || []).filter(x => x !== okey);
+  if (mode) p[mode].push(okey);
+  if (!p.pick.length && !p.hide.length) delete d.offerPrefs[k];
+}
+// Kurztext fuers Schild: "1,29 €", "3× ab 1,29 €"
+function offerTag(r) {
+  if (!r.shown.length) return "";
+  const p = r.shown[0].price.replace(/\s*€/, " €");
+  return r.shown.length > 1 ? `${r.shown.length}× ab ${p}` : p;
+}
+
+// Fenster mit allen Angeboten zu einem Eintrag. getData() liefert die aktuelle Liste,
+// onPref(okey, mode) speichert (sofort in der Anzeige + im Gist).
+function showOfferSheet(item, getData, onPref) {
+  if (!document.getElementById("offerCss")) {
+    const st = document.createElement("style"); st.id = "offerCss";
+    st.textContent = `
+#offerSheet{margin:auto;background:#1E1A16;color:#F2EDE5;border:1px solid #2C2823;border-radius:18px;padding:18px 18px 14px;
+  width:min(560px,calc(100% - 24px));max-height:80vh;font-family:system-ui,-apple-system,sans-serif}
+#offerSheet::backdrop{background:rgba(0,0,0,.6)}
+#offerSheet h3{font-size:20px;font-weight:600;display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0}
+#offerSheet h3 small{font-size:13px;font-weight:400;color:#A79E90}
+#offerSheet .hint{font-size:13px;color:#6E665B;margin:4px 0 10px}
+#offerSheet ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:55vh}
+#offerSheet li{display:grid;grid-template-columns:62px minmax(0,1fr) auto auto;gap:8px;align-items:center;background:#26221D;
+  border:1px solid #2C2823;border-radius:12px;padding:8px 10px;font-size:15px;cursor:default;opacity:1}
+#offerSheet li .pr{font-weight:700;color:#f7c96b;white-space:nowrap}
+#offerSheet li .nm{min-width:0;overflow-wrap:anywhere}#offerSheet li .nm small{display:block;color:#A79E90;font-size:12px}
+#offerSheet li.picked{border-color:rgba(12,163,12,.6)}
+#offerSheet li.hid{opacity:.45}
+#offerSheet button{font:inherit;font-size:13px;color:#F2EDE5;background:#15120F;border:1px solid #2C2823;border-radius:9px;padding:6px 9px;white-space:nowrap}
+#offerSheet button.on{background:rgba(12,163,12,.25);border-color:rgba(12,163,12,.6);color:#7ed99a}
+#offerSheet .foot{display:flex;justify-content:space-between;margin-top:12px}
+@media (max-width:480px){#offerSheet li{grid-template-columns:56px minmax(0,1fr) auto}#offerSheet li .nm{grid-column:2/4}
+  #offerSheet li button[data-m=pick]{grid-column:2;justify-self:end}}`;
+    document.head.appendChild(st);
+  }
+  let dlg = document.getElementById("offerSheet");
+  if (!dlg) {
+    dlg = document.createElement("dialog"); dlg.id = "offerSheet";
+    dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });   // Tipp daneben schliesst
+    document.body.appendChild(dlg);
+  }
+  const until = Angebote.data && Angebote.data.until ? new Date(Angebote.data.until + "T12:00") : null;
+  const draw = () => {
+    const r = Angebote.forItem(item, getData());
+    const row = o => {
+      const k = offerKey(o), picked = r.pick.includes(k), hidden = r.hide.includes(k);
+      return `<li class="${picked ? "picked" : ""}${hidden ? " hid" : ""}" data-k="${esc(k)}">
+        <span class="pr">${esc(o.price)}</span><span class="nm">${esc(o.name)}${o.sub ? `<small>${esc(o.sub)}</small>` : ""}</span>
+        <button data-m="pick" class="${picked ? "on" : ""}">${picked ? "✓ Kauf ich" : "Kauf ich"}</button>
+        <button data-m="hide">${hidden ? "Zeigen" : "Ausblenden"}</button></li>`;
+    };
+    const order = [...r.all].sort((a, b) => r.hide.includes(offerKey(a)) - r.hide.includes(offerKey(b)));
+    const bis = until ? ` · bis ${WD_SHORT[until.getDay()]} ${until.getDate()}.${until.getMonth() + 1}.` : "";
+    dlg.innerHTML = `<h3>${esc(item)} <small>${r.all.length} Angebot${r.all.length === 1 ? "" : "e"}${bis}</small></h3>
+      <p class="hint">„Kauf ich“: Das Schild erscheint nur noch, wenn eins deiner Produkte im Angebot ist. Gilt auf iPad und Handy.</p>
+      <ul>${order.map(row).join("")}</ul>
+      <div class="foot"><button data-reset>Auswahl zurücksetzen</button><button data-close>Fertig</button></div>`;
+    if (!(r.pick.length || r.hide.length)) dlg.querySelector("[data-reset]").style.visibility = "hidden";
+    dlg.querySelectorAll("li button").forEach(b => b.onclick = () => {
+      const k = b.closest("li").dataset.k, m = b.dataset.m;
+      const on = m === "pick" ? r.pick.includes(k) : r.hide.includes(k);
+      onPref(k, on ? null : m); draw();
+    });
+    dlg.querySelector("[data-close]").onclick = () => dlg.close();
+    dlg.querySelector("[data-reset]").onclick = () => { for (const k of [...r.pick, ...r.hide]) onPref(k, null); draw(); };
+  };
+  draw();
+  if (!dlg.open) dlg.showModal();
+}
 // "milch" passt zu "vollmilch", "zwiebeln" zu "gemüsezwiebel", aber "eis" nicht zu "reis"
 function stem(w) { const s = w.replace(/(en|n|e|s)$/, ""); return s.length >= 3 ? s : w; }
 // Zusammensetzungen, die etwas ganz anderes meinen
 const NOT_A = ["buttermilch", "kokosmilch", "kondensmilch", "sonnenmilch", "reinigungsmilch", "körpermilch",
-               "milchreis", "eiswürfel", "pfefferbeißer", "seelachs"];
+               "milchreis", "eiswürfel", "pfefferbeißer", "seelachs", "fleischkäse", "leberkäse", "alpenmilch", "vollmilchschokolade"];
 // Fertiggerichte und Wuerzware: "Nudeln" soll keine Terrine finden, "Paprika" keine Salami
-const NOT_OFFER = /terrine|rahmsauce|sauce|soße|fix|würzmischung|gewürz|kolbasz|salami|fertiggericht/i;
+const NOT_OFFER = /terrine|rahmsauce|\bsauce\b|soße|\bfix\b|würzmischung|gewürz|kolbasz|salami|fertiggericht|spaghetteria|riegel/i;
 function wordHit(tok, w) {
   if (tok === w || stem(tok) === stem(w)) return true;
   if (NOT_A.includes(tok)) return false;

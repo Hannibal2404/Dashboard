@@ -142,7 +142,7 @@ button:active{transform:scale(.97)}
 .items li{display:flex;align-items:center;gap:10px;background:var(--chip);border:1px solid var(--line);border-radius:12px;
   padding:9px 12px;font-size:17px;cursor:pointer;min-width:0}
 .items li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.items li .tag{flex:none;margin-left:auto;font-style:normal;font-size:13px;font-weight:600;color:var(--warn-ink);
+.items li .tag{flex:none;margin-left:auto;cursor:pointer;font-style:normal;font-size:13px;font-weight:600;color:var(--warn-ink);
   background:rgba(250,178,25,.12);border-radius:6px;padding:2px 6px}
 .items li.done .tag{display:none}
 .items li .box{flex:none;width:20px;height:20px;border-radius:6px;border:2px solid var(--muted)}
@@ -232,7 +232,7 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
   <div class="row"><button id="setupCancel">Abbrechen</button><button class="primary" id="setupSave">Verbinden</button></div>
 </dialog>
 
-<script src="lib.js?v=9"></script>
+<script src="lib.js?v=10"></script>
 <script>
 const WETTER_URL = "https://hannibal2404.github.io/Wetter/dashboard.json";
 const TANKEN_URL = "https://hannibal2404.github.io/Tanken/dashboard.json";
@@ -444,8 +444,8 @@ function renderList(errMsg) {
     <form class="add" id="addForm"><input id="newItem" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
     <div class="chips">${chipsHtml(listData, 16)}</div>
     <ul class="items${editMode ? " edit" : ""}">${items.map(i => {
-      const o = Angebote.match(i.text);
-      const tag = o && !editMode ? `<em class="tag" title="${esc(o.name + " · " + o.price)}">🏷 ${esc(o.price.replace(/\s*€/, " €"))}</em>` : "";
+      const r = Angebote.forItem(i.text, listData), lbl = offerTag(r);
+      const tag = lbl && !editMode ? `<em class="tag" data-item="${esc(i.text)}">🏷 ${esc(lbl)}</em>` : "";
       return `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span>${tag}</li>`;
     }).join("")}</ul>
     <div class="list-foot"><span>${open ? open + " offen" : "Alles da"}</span>${done ? `<button id="clearDone">${done} Erledigte entfernen</button>` : ""}</div>`;
@@ -462,6 +462,12 @@ function renderList(errMsg) {
     t => { optimisticAdd(listData, t); renderList(); run(Liste.add(t)); },
     t => { listData.hidden = [...(listData.hidden || []), t.toLowerCase()]; renderList(); run(Liste.hide(t)); },
     () => renderList());
+  // Preisschild antippen: alle Angebote zum Eintrag, "Kauf ich" / "Ausblenden"
+  body.querySelectorAll(".items .tag").forEach(t => t.onclick = ev => {
+    ev.stopPropagation();
+    const item = t.dataset.item;
+    showOfferSheet(item, () => listData, (k, m) => { applyOfferPref(listData, item, k, m); renderList(); run(Liste.setOfferPref(item, k, m)); });
+  });
   body.querySelectorAll(".items li").forEach(li => li.onclick = () => {
     const it = listData.items.find(x => x.id === li.dataset.id); if (!it || it.id.startsWith("tmp")) return;
     if (editMode) { listData.items = listData.items.filter(x => x.id !== it.id); renderList(); run(Liste.remove(it.id)); return; }
