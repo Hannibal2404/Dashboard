@@ -31,6 +31,10 @@ h1 small{font-family:var(--sans);font-size:14px;font-weight:400;color:var(--mute
 .add{display:flex;gap:8px;margin:16px 0 14px;position:sticky;top:0;background:var(--paper);padding:6px 0;z-index:2}
 .add input{flex:1;min-width:0;background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:17px}
 .add button{font-size:24px;padding:4px 18px;background:var(--warn);color:#1b1408;border:0;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 14px}
+.chip{font-size:15px;padding:6px 12px;border-radius:999px;background:transparent;border:1px dashed #4a4238;color:var(--muted);
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.chip::before{content:"+ ";color:var(--warn-ink)}
 ul{list-style:none;display:flex;flex-direction:column;gap:6px}
 li{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:18px}
 li .box{flex:none;width:24px;height:24px;border-radius:7px;border:2px solid var(--muted)}
@@ -86,6 +90,7 @@ function render(err) {
   const li = i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span class="t">${esc(i.text)}</span><button class="x" aria-label="Löschen">×</button></li>`;
   app.innerHTML = `
     <form class="add" id="f"><input id="nv" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
+    <div class="chips">${chipsHtml(data, 8)}</div>
     ${open.length ? `<ul>${open.map(li).join("")}</ul>` : `<div class="empty">Alles da 🎉</div>`}
     ${done.length ? `<div class="sep"><span>Im Wagen (${done.length})</span><button id="clr">Entfernen</button></div><ul>${done.map(li).join("")}</ul>` : ""}`;
   $("foot").innerHTML = `<button id="out">Verbindung auf diesem Gerät trennen</button>`;
@@ -94,9 +99,12 @@ function render(err) {
   $("f").onsubmit = e => {
     e.preventDefault();
     const t = $("nv").value.trim(); if (!t) return;
-    $("nv").value = ""; data.items.push({ id: "tmp" + Date.now(), text: t, done: false });
+    $("nv").value = ""; optimisticAdd(data, t);
     render(); $("nv").focus(); go(Liste.add(t));
   };
+  bindChips(app,
+    t => { optimisticAdd(data, t); render(); go(Liste.add(t)); },
+    t => { if (confirm(`„${t}“ nicht mehr vorschlagen?`)) { data.hidden = [...(data.hidden || []), t.toLowerCase()]; render(); go(Liste.hide(t)); } });
   app.querySelectorAll("li").forEach(el => {
     const id = el.dataset.id;
     el.onclick = () => { const it = data.items.find(x => x.id === id); if (!it || id.startsWith("tmp")) return; it.done = !it.done; render(); go(Liste.toggle(id)); };

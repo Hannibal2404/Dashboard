@@ -78,14 +78,49 @@ const Liste = {
     return data;
   },
 
+  // "Milch, Eier und Brot" -> drei Eintraege
+  split(text) {
+    return String(text).split(/\s*[,;\n]\s*|\s+und\s+|\s+&\s+/i)
+      .map(s => s.trim()).filter(Boolean)
+      .map(s => s.charAt(0).toUpperCase() + s.slice(1));
+  },
+
   add(text) {
-    text = text.trim();
-    if (!text) return Promise.resolve(this.cached());
+    const parts = this.split(text);
+    if (!parts.length) return Promise.resolve(this.cached());
     return this.change(d => {
-      const same = d.items.find(i => i.text.toLowerCase() === text.toLowerCase());
-      if (same) { same.done = false; return; }        // schon drauf -> wieder offen
-      d.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-                     text, done: false, added: new Date().toISOString() });
+      d.freq = d.freq || {};
+      for (const t of parts) {
+        const key = t.toLowerCase();
+        const f = d.freq[key] || (d.freq[key] = { text: t, n: 0 });
+        f.n += 1; f.last = new Date().toISOString();
+        const same = d.items.find(i => i.text.toLowerCase() === key);
+        if (same) { same.done = false; continue; }      // schon drauf -> wieder offen
+        d.items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+                       text: f.text, done: false, added: new Date().toISOString() });
+      }
+    });
+  },
+
+  // Vorschlaege: oft gekaufte Artikel, die gerade nicht offen auf der Liste stehen.
+  // Bis die Liste genug gelernt hat, fuellen Grundnahrungsmittel auf.
+  suggestions(data, max = 14) {
+    const open = new Set(data.items.filter(i => !i.done).map(i => i.text.toLowerCase()));
+    const learned = Object.values(data.freq || {}).sort((a, b) => b.n - a.n || String(b.last).localeCompare(String(a.last)));
+    const out = [], seen = new Set();
+    for (const f of [...learned, ...STARTER.map(text => ({ text }))]) {
+      const k = f.text.toLowerCase();
+      if (seen.has(k) || open.has(k) || (data.hidden || []).includes(k)) continue;
+      seen.add(k); out.push(f.text);
+      if (out.length >= max) break;
+    }
+    return out;
+  },
+  hide(text) {
+    return this.change(d => {
+      const k = text.toLowerCase();
+      d.hidden = [...new Set([...(d.hidden || []), k])];
+      if (d.freq) delete d.freq[k];
     });
   },
   toggle(id) { return this.change(d => { const i = d.items.find(x => x.id === id); if (i) i.done = !i.done; }); },
@@ -100,6 +135,32 @@ const Liste = {
   },
   logout() { lsSet(LS_TOKEN, null); lsSet(LS_GIST, null); lsSet(LS_CACHE, null); },
 };
+
+const STARTER = ["Milch", "Eier", "Brot", "Butter", "Käse", "Skyr", "Joghurt", "Hähnchenbrust",
+                 "Bananen", "Äpfel", "Tomaten", "Gurke", "Zwiebeln", "Kaffee", "Toilettenpapier"];
+
+// Sofort in der Anzeige ergaenzen (vor der Antwort von GitHub)
+function optimisticAdd(data, text) {
+  for (const t of Liste.split(text)) {
+    const same = data.items.find(i => i.text.toLowerCase() === t.toLowerCase());
+    if (same) same.done = false;
+    else data.items.push({ id: "tmp" + Date.now() + Math.random(), text: t, done: false });
+  }
+}
+
+// Vorschlags-Knoepfe: Tippen fuegt hinzu, lange druecken blendet den Vorschlag aus.
+function chipsHtml(data, max) {
+  return Liste.suggestions(data, max).map(t => `<button type="button" class="chip" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+}
+function bindChips(root, onAdd, onHide) {
+  root.querySelectorAll(".chip").forEach(b => {
+    let timer = null, long = false;
+    b.addEventListener("pointerdown", () => { long = false; timer = setTimeout(() => { long = true; onHide(b.dataset.t); }, 650); });
+    ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, () => clearTimeout(timer)));
+    b.addEventListener("contextmenu", e => e.preventDefault());
+    b.addEventListener("click", () => { if (!long) onAdd(b.dataset.t); });
+  });
+}
 
 // Link zum Anlegen des Schluessels: klassischer Token, nur Recht "gist".
 const TOKEN_URL = "https://github.com/settings/tokens/new?scopes=gist&description=K%C3%BCchen-Dashboard";
