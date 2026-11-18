@@ -111,6 +111,14 @@ button:active{transform:scale(.97)}
 .setup-cta{margin:auto;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
 .err{color:var(--bad-ink)}
 
+/* Nachtansicht */
+#night{position:fixed;inset:0;background:#000;z-index:50;display:none;cursor:pointer}
+body.night #night{display:block}
+#night .nclock{position:absolute;transform:translate(-50%,-50%);text-align:center;color:#4a4238;
+  transition:left 2s ease,top 2s ease}
+#night .nt{font-family:var(--serif);font-size:120px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+#night .nd{font-size:20px;margin-top:6px;color:#35302a}
+
 /* Einrichtungs-Dialog */
 dialog{margin:auto;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:22px;max-width:520px;width:calc(100% - 40px)}
 dialog::backdrop{background:rgba(0,0,0,.6)}
@@ -164,6 +172,8 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
     <div id="listBody" style="display:flex;flex-direction:column;flex:1;min-height:0"></div>
   </section>
 </main>
+
+<div id="night"><div class="nclock" style="left:50%;top:50%"><div class="nt" id="nTime"></div><div class="nd" id="nDate"></div></div></div>
 
 <dialog id="setup">
   <h2>Einkaufsliste verbinden</h2>
@@ -408,7 +418,7 @@ async function reloadPhotos() {
   if (!photoIds.length) { document.querySelectorAll(".layer").forEach(l => l.classList.remove("on")); currentId = null; }
 }
 async function showNext() {
-  if (!photoIds.length) return;
+  if (!photoIds.length || document.body.classList.contains("night")) return;
   if (++pos >= order.length) { order = shuffle([...photoIds]); pos = 0; if (order.length > 1 && order[0] === currentId) order.push(order.shift()); }
   const id = order[pos], rec = await DB.get(id);
   if (!rec) return;
@@ -447,6 +457,54 @@ $("photo").addEventListener("click", () => {
   ctlTimer = setTimeout(() => $("photo").classList.remove("show-ctl"), 6000);
 });
 
+/* ---------- Nachtmodus: Sonnenuntergang bis Sonnenaufgang ---------- */
+const LAT = 52.1205, LON = 11.6276;
+const WAKE_SEC = 60;                                   // Antippen weckt für 1 Minute
+const FORCE_NIGHT = new URLSearchParams(location.search).has("nacht");  // zum Testen
+
+// Sonnenauf-/untergang (Sonnenaufgangsgleichung, genau auf ~1 Minute)
+function sunTimes(day) {
+  const rad = Math.PI / 180, noon = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12);
+  const n = Math.round(noon.getTime() / 864e5 + 2440587.5 - 2451545.0 + 0.0008);
+  const J = n - LON / 360;
+  const M = (357.5291 + 0.98560028 * J) % 360;
+  const C = 1.9148 * Math.sin(M * rad) + 0.02 * Math.sin(2 * M * rad) + 0.0003 * Math.sin(3 * M * rad);
+  const L = (M + C + 180 + 102.9372) % 360;
+  const Jt = 2451545 + J + 0.0053 * Math.sin(M * rad) - 0.0069 * Math.sin(2 * L * rad);
+  const dec = Math.asin(Math.sin(L * rad) * Math.sin(23.4397 * rad));
+  const w = Math.acos((Math.sin(-0.833 * rad) - Math.sin(LAT * rad) * Math.sin(dec)) / (Math.cos(LAT * rad) * Math.cos(dec))) / rad;
+  const toDate = jd => new Date((jd - 2440587.5) * 864e5);
+  return { rise: toDate(Jt - w / 360), set: toDate(Jt + w / 360) };
+}
+function isNight(now = new Date()) {
+  if (FORCE_NIGHT) return true;
+  const s = sunTimes(now);
+  return now >= s.set || now < s.rise;
+}
+let wakeUntil = 0, lastNight = null;
+function updateNight() {
+  const night = isNight() && Date.now() >= wakeUntil;
+  if (night !== lastNight) {
+    document.body.classList.toggle("night", night);
+    if (lastNight !== null && !night) { refreshData(); refreshList(); showNext(); }
+    lastNight = night;
+  }
+  if (night) {
+    const d = new Date();
+    $("nTime").textContent = hhmm(d);
+    $("nDate").textContent = `${WT[d.getDay()]}, ${d.getDate()}. ${MO[d.getMonth()]}`;
+  }
+}
+// Uhr wandert alle 5 Minuten ein Stück, damit nichts einbrennt
+function moveNightClock() {
+  const c = document.querySelector("#night .nclock");
+  c.style.left = (30 + Math.random() * 40) + "%";
+  c.style.top = (30 + Math.random() * 40) + "%";
+}
+$("night").addEventListener("click", () => { wakeUntil = Date.now() + WAKE_SEC * 1000; updateNight(); });
+// Während der Weckzeit: jede Berührung verlängert die Minute
+document.addEventListener("pointerdown", () => { if (wakeUntil > Date.now()) wakeUntil = Date.now() + WAKE_SEC * 1000; }, true);
+
 /* ---------- Start ---------- */
 tickClock(); setInterval(tickClock, 1000);
 refreshData(); setInterval(refreshData, 10 * 60 * 1000);
@@ -454,6 +512,8 @@ renderList(); refreshList(); setInterval(refreshList, 60 * 1000);
 reloadPhotos().then(startSlides).catch(() => {});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshData(); refreshList(); } });
 watchForUpdates(10);
+updateNight(); setInterval(updateNight, 1000);
+moveNightClock(); setInterval(moveNightClock, 5 * 60 * 1000);
 </script>
 </body>
 </html>
