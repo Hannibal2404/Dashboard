@@ -115,8 +115,33 @@ const Liste = {
       .map(s => s.charAt(0).toUpperCase() + s.slice(1));
   },
 
+  // Autokorrektur fuer Diktat- und Tippfehler: unbekanntes Wort -> sehr aehnliches
+  // bekanntes Wort. Vergleich auf "Lautform" (Umlaute, y, -er/-a), gleicher
+  // Anfangsbuchstabe Pflicht; bis 4 Laute keine, bis 6 eine, darueber zwei Abweichungen.
+  correct(t, d) {
+    const key = t.toLowerCase();
+    const known = new Map();
+    for (const f of Object.values(d.freq || {})) known.set(f.text.toLowerCase(), { text: f.text, n: f.n || 0 });
+    for (const s of STARTER) if (!known.has(s.toLowerCase())) known.set(s.toLowerCase(), { text: s, n: 0 });
+    for (const i of d.items) if (!known.has(i.text.toLowerCase())) known.set(i.text.toLowerCase(), { text: i.text, n: 0 });
+    if (known.has(key)) return known.get(key).text;
+    const a = sound(t);
+    if (a.length < 3) return t;
+    let best = null;
+    for (const k of known.values()) {
+      const b = sound(k.text);
+      if (b[0] !== a[0]) continue;
+      const L = Math.min(a.length, b.length), dist = lev(a, b);
+      const max = L <= 4 ? 0 : L <= 6 ? 1 : 2;   // kurze Woerter nur bei gleicher Lautform
+      if (dist > max) continue;
+      if (!best || dist < best.dist || (dist === best.dist && k.n > best.n)) best = { ...k, dist };
+    }
+    return best ? best.text : t;
+  },
+
   applyAdd(d, parts) {
     d.freq = d.freq || {};
+    parts = parts.map(t => this.correct(t, d));
     for (const t of parts) {
       const key = t.toLowerCase();
       const f = d.freq[key] || (d.freq[key] = { text: t, n: 0 });
@@ -168,7 +193,21 @@ const Liste = {
 };
 
 const STARTER = ["Milch", "Eier", "Brot", "Butter", "Käse", "Skyr", "Joghurt", "Hähnchenbrust",
-                 "Bananen", "Äpfel", "Tomaten", "Gurke", "Zwiebeln", "Kaffee", "Toilettenpapier"];
+                 "Bananen", "Äpfel", "Tomaten", "Gurke", "Zwiebeln", "Kaffee", "Bier", "Toilettenpapier"];
+
+// "Lautform" fuer die Autokorrektur: Bier ~ Bia, Skyr ~ Skür, Hähnchen ~ Hänchen
+function sound(s) {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/ß/g, "ss").replace(/y/g, "u").replace(/er\b/g, "a").replace(/ie/g, "i")
+    .replace(/h(?![aeiou])/g, "").replace(/(.)\1+/g, "$1").replace(/[^a-z]/g, "");
+}
+function lev(a, b) {
+  const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 1; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[m][n];
+}
 
 // Sofort in der Anzeige ergaenzen (vor der Antwort von GitHub)
 function optimisticAdd(data, text) {
