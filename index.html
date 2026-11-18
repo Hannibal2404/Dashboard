@@ -14,6 +14,11 @@
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
 <title>Küche</title>
+<script>
+// Auf dem Handy direkt die Einkaufsliste zeigen (gleiche Web-App -> gleicher Schlüssel).
+// ?voll erzwingt das Dashboard.
+if (Math.min(screen.width, screen.height) < 600 && !/[?&]voll/.test(location.search)) location.replace("liste.html");
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
