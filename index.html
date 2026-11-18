@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#15120F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Küche">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Küche</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --paper:#15120F;--card:#1E1A16;--ink:#F2EDE5;--muted:#A79E90;--faint:#6E665B;
+  --line:#2C2823;--chip:#26221D;
+  --good:#0ca30c;--good-ink:#7ed99a;--warn:#fab219;--warn-ink:#f7c96b;--bad:#d03b3b;--bad-ink:#eb8f8f;
+  --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --gap:12px;
+}
+html,body{height:100%;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;overflow:hidden;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:active{transform:scale(.97)}
+
+.grid{height:100dvh;display:grid;gap:var(--gap);
+  padding:max(var(--gap),env(safe-area-inset-top)) max(var(--gap),env(safe-area-inset-right))
+          max(var(--gap),env(safe-area-inset-bottom)) max(var(--gap),env(safe-area-inset-left));
+  grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) minmax(0,1.15fr);
+  grid-template-areas:"photo clock clock" "photo gassi tanken" "photo list list"}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px;
+  min-width:0;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.k{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;
+  display:flex;align-items:center;gap:8px;justify-content:space-between}
+.stale{font-size:12px;letter-spacing:0;text-transform:none;color:var(--warn-ink);font-weight:500}
+.muted{color:var(--muted)}
+
+/* Foto */
+.photo{grid-area:photo;padding:0;background:#000}
+.layer{position:absolute;inset:0;opacity:0;transition:opacity 1.6s ease}
+.layer.on{opacity:1}
+.layer .bg{position:absolute;inset:-40px;background-size:cover;background-position:center;
+  filter:blur(28px) brightness(.55) saturate(1.2)}
+.layer img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.photo-ctl{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:8px;justify-content:space-between;
+  opacity:0;transition:opacity .3s;pointer-events:none}
+.photo.show-ctl .photo-ctl{opacity:1;pointer-events:auto}
+.photo-ctl button{background:rgba(21,18,15,.8);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;text-align:center;padding:24px;color:var(--muted);background:var(--card)}
+.empty .big{font-size:44px}
+.count{font-size:12px;color:var(--muted);align-self:center}
+
+/* Uhr */
+.clock{grid-area:clock;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding:12px 22px}
+.time{font-family:var(--serif);font-size:clamp(56px,9.5vh,92px);font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.date{font-size:clamp(17px,2.6vh,22px);color:var(--muted);margin-top:4px}
+.now-wx{text-align:right}
+.now-wx .t{font-size:clamp(34px,6vh,52px);font-weight:600;line-height:1}
+.now-wx .s{font-size:14px;color:var(--muted);margin-top:4px}
+
+/* Gassi */
+.gassi{grid-area:gassi}
+.big-v{font-family:var(--serif);font-size:clamp(30px,5.4vh,46px);font-weight:600;line-height:1.05;margin-top:10px}
+.sub{font-size:15px;color:var(--muted);margin-top:6px;line-height:1.35}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:999px;padding:3px 10px;margin-top:10px;align-self:flex-start}
+.pill.gut,.pill.good{background:rgba(12,163,12,.16);color:var(--good-ink)}
+.pill.mittel,.pill.warn{background:rgba(250,178,25,.14);color:var(--warn-ink)}
+.pill.schlecht,.pill.bad{background:rgba(208,59,59,.16);color:var(--bad-ink)}
+.strip{display:flex;gap:2px;margin-top:auto;padding-top:12px;height:34px;position:relative}
+.strip i{flex:1;border-radius:3px;background:var(--line)}
+.strip i.gut{background:var(--good)}.strip i.mittel{background:var(--warn)}.strip i.schlecht{background:var(--bad)}
+.strip i.past{opacity:.25}
+.strip i.now{outline:2px solid var(--ink);outline-offset:1px}
+.strip-l{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-top:3px}
+
+/* Tanken */
+.tanken{grid-area:tanken}
+.price{font-family:var(--serif);font-size:clamp(40px,7.5vh,64px);font-weight:600;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums}
+.price sup{font-size:.5em;vertical-align:.75em;margin-left:1px}
+.price .eur{font-size:.42em;color:var(--muted);margin-left:6px}
+.spark{margin-top:auto;padding-top:10px;width:100%;height:46px}
+
+/* Einkaufsliste */
+.list{grid-area:list}
+.add{display:flex;gap:8px;margin-top:10px}
+.add input{flex:1;min-width:0;background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:17px;
+  -webkit-user-select:text;user-select:text}
+.add input:focus{outline:2px solid var(--warn);outline-offset:-1px}
+.add button{font-size:22px;padding:4px 16px;background:var(--warn);color:#1b1408;border:0;font-weight:700}
+.items{list-style:none;margin-top:10px;overflow-y:auto;flex:1;min-height:0;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;align-content:start}
+.items li{display:flex;align-items:center;gap:10px;background:var(--chip);border:1px solid var(--line);border-radius:12px;
+  padding:9px 12px;font-size:17px;cursor:pointer;min-width:0}
+.items li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.items li .box{flex:none;width:20px;height:20px;border-radius:6px;border:2px solid var(--muted)}
+.items li.done{opacity:.45}
+.items li.done span{text-decoration:line-through}
+.items li.done .box{background:var(--good);border-color:var(--good)}
+.list-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:13px;color:var(--muted);min-height:30px}
+.list-foot button{font-size:13px;padding:5px 10px}
+.setup-cta{margin:auto;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
+.err{color:var(--bad-ink)}
+
+/* Einrichtungs-Dialog */
+dialog{margin:auto;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:22px;max-width:520px;width:calc(100% - 40px)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog h2{font-family:var(--serif);font-size:24px;margin-bottom:10px}
+dialog ol{margin:10px 0 14px 20px;line-height:1.5;color:var(--muted)}
+dialog a{color:var(--warn-ink)}
+dialog input{width:100%;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:4px;-webkit-user-select:text;user-select:text}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
+</style>
+</head>
+<body>
+<main class="grid">
+
+  <section class="tile photo" id="photo">
+    <div class="layer" id="layerA"><div class="bg"></div><img alt=""></div>
+    <div class="layer" id="layerB"><div class="bg"></div><img alt=""></div>
+    <div class="empty" id="photoEmpty">
+      <div class="big">🖼️</div>
+      <div>Noch keine Bilder.<br>Sie bleiben nur auf diesem iPad.</div>
+      <button id="addFirst">Bilder hinzufügen</button>
+    </div>
+    <div class="photo-ctl">
+      <button id="addPhotos">＋ Bilder</button>
+      <span class="count" id="photoCount"></span>
+      <button id="delPhoto">Dieses Bild entfernen</button>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" multiple hidden>
+  </section>
+
+  <section class="tile clock">
+    <div>
+      <div class="time" id="time">--:--</div>
+      <div class="date" id="date"></div>
+    </div>
+    <div class="now-wx" id="nowWx"></div>
+  </section>
+
+  <section class="tile gassi" id="gassi">
+    <div class="k">🐾 Gassi <span class="stale" id="gassiStale"></span></div>
+    <div id="gassiBody" class="muted" style="margin-top:10px">Lade …</div>
+  </section>
+
+  <section class="tile tanken" id="tanken">
+    <div class="k">⛽ Diesel <span class="stale" id="tankStale"></span></div>
+    <div id="tankBody" class="muted" style="margin-top:10px">Lade …</div>
+  </section>
+
+  <section class="tile list" id="list">
+    <div class="k">🛒 Einkaufsliste <span class="stale" id="listState"></span></div>
+    <div id="listBody" style="display:flex;flex-direction:column;flex:1;min-height:0"></div>
+  </section>
+</main>
+
+<dialog id="setup">
+  <h2>Einkaufsliste verbinden</h2>
+  <p class="muted">Die Liste liegt in deinem GitHub-Konto, damit iPad und Handy dieselbe sehen. Dafür braucht dieses Gerät einmalig einen Zugangsschlüssel.</p>
+  <ol>
+    <li><a href="" id="tokenLink" target="_blank" rel="noopener">Schlüssel bei GitHub anlegen</a> (Häkchen „gist“ ist schon gesetzt)</li>
+    <li>Ablauf wählen, unten „Generate token“ tippen</li>
+    <li>Den Schlüssel (beginnt mit <code>ghp_</code>) kopieren und hier einfügen</li>
+  </ol>
+  <input type="password" id="tokenInput" placeholder="ghp_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <p class="err" id="setupErr" style="margin-top:8px"></p>
+  <div class="row"><button id="setupCancel">Abbrechen</button><button class="primary" id="setupSave">Verbinden</button></div>
+</dialog>
+
+<script src="lib.js"></script>
+<script>
+const WETTER_URL = "https://hannibal2404.github.io/Wetter/dashboard.json";
+const TANKEN_URL = "https://hannibal2404.github.io/Tanken/dashboard.json";
+const SLIDE_SEC = 30;
+const $ = id => document.getElementById(id);
+const WT = ["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+const MO = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const pad = n => String(n).padStart(2, "0");
+const hhmm = d => pad(d.getHours()) + ":" + pad(d.getMinutes());
+
+/* ---------- Uhr ---------- */
+function tickClock() {
+  const d = new Date();
+  $("time").textContent = hhmm(d);
+  $("date").textContent = `${WT[d.getDay()]}, ${d.getDate()}. ${MO[d.getMonth()]}`;
+}
+
+/* ---------- Gassi ---------- */
+const WX = { clear: ["☀️", "🌙"], partly: ["⛅", "☁️"], cloudy: ["☁️", "☁️"], fog: ["🌫️", "🌫️"],
+             rain: ["🌧️", "🌧️"], snow: ["🌨️", "🌨️"], thunder: ["⛈️", "⛈️"] };
+const wxIcon = (k, h) => (WX[k] || WX.cloudy)[(h < 7 || h >= 18) ? 1 : 0];
+const RATE = { gut: "gut", mittel: "mittel", schlecht: "schlecht" };
+const range = w => `${w.start}–${w.end + 1} Uhr`;
+function dur(min) { const h = Math.floor(min / 60), m = min % 60; return h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`; }
+function stale(builtIso, maxH) {
+  const t = new Date(builtIso); if (isNaN(t)) return "";
+  return (Date.now() - t) / 36e5 > maxH ? "Stand " + hhmm(t) : "";
+}
+
+function renderGassi(d) {
+  const now = new Date(), H = now.getHours(), M = now.getMinutes();
+  const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const today = d.days.find(x => x.date === todayIso);
+  const next = d.days.find(x => x.date > todayIso);
+  const tw = today ? today.windows : [];
+  $("gassiStale").textContent = stale(d.built, 2);
+
+  const cur = tw.find(w => w.start <= H && H <= w.end);
+  const upcoming = tw.filter(w => w.start > H);
+  const best = (ws, r) => ws.filter(w => w.rating === r).sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start)[0];
+  let head, sub, rating, win;
+
+  if (cur && cur.rating === "gut") {
+    win = cur; rating = "gut"; head = "Jetzt gut";
+    sub = `noch ${dur((cur.end + 1) * 60 - (H * 60 + M))} · bis ${cur.end + 1} Uhr`;
+  } else if ((win = upcoming.find(w => w.rating === "gut"))) {
+    rating = "gut"; head = range(win);
+    sub = `gutes Fenster in ${dur(win.start * 60 - (H * 60 + M))}`;
+  } else if ((win = (cur && cur.rating === "mittel") ? cur : best(upcoming, "mittel"))) {
+    rating = "mittel"; head = win === cur ? "Jetzt okay" : range(win);
+    sub = win === cur ? `heute nichts Besseres · bis ${cur.end + 1} Uhr` : "heute nur mittel";
+  } else if (next && (win = best(next.windows, "gut") || best(next.windows, "mittel"))) {
+    rating = win.rating; head = "Morgen " + range(win);
+    sub = "heute kein gutes Fenster mehr";
+  } else {
+    rating = "schlecht"; head = "Kein gutes Fenster"; sub = "heute und morgen schwierig";
+  }
+  let wxLine = "";
+  if (win) wxLine = `${wxIcon(win.kind, win.start)} ${win.temp_min === win.temp_max ? win.temp_min : win.temp_min + "–" + win.temp_max}° · Regen ${win.rain_max} %`;
+  const o = d.outlook, oTxt = !o ? "" : {
+    rain_soon: `🌧️ Regen gegen ${o.time}`, dry_soon: `🌤️ Regenpause ab ${o.time}`,
+    rain_hold: "🌧️ Regen hält an", dry: "✅ Erst mal trocken" }[o.kind] || "";
+
+  // Stundenstreifen 5–22 Uhr
+  const rateAt = h => { const w = tw.find(w => w.start <= h && h <= w.end); return w ? w.rating : ""; };
+  let strip = "";
+  for (let h = 5; h <= 22; h++) strip += `<i class="${rateAt(h)} ${h < H ? "past" : ""} ${h === H ? "now" : ""}"></i>`;
+
+  $("gassiBody").className = "";
+  $("gassiBody").style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
+  $("gassiBody").innerHTML = `
+    <div class="big-v">${esc(head)}</div>
+    <span class="pill ${rating}">${{ gut: "gut", mittel: "mittel", schlecht: "schlecht" }[rating]}</span>
+    <div class="sub">${esc(sub)}${wxLine ? "<br>" + wxLine : ""}${oTxt ? "<br>" + oTxt : ""}</div>
+    <div class="strip">${strip}</div>
+    <div class="strip-l"><span>5</span><span>12</span><span>22 Uhr</span></div>`;
+
+  if (d.now_temp != null)
+    $("nowWx").innerHTML = `<div class="t">${wxIcon(d.now_kind, H)} ${d.now_temp}°</div><div class="s">Magdeburg</div>`;
+}
+
+/* ---------- Tanken ---------- */
+function priceHtml(p) {
+  const s = p.toFixed(3).replace(".", ",");
+  return `${s.slice(0, -1)}<sup>${s.slice(-1)}</sup><span class="eur">€</span>`;
+}
+function sparkSvg(lows) {
+  if (!lows || lows.length < 2) return "";
+  const v = lows.map(x => x[1]), lo = Math.min(...v), hi = Math.max(...v), W = 300, Hh = 46, p = 4;
+  const x = i => p + i * (W - 2 * p) / (v.length - 1), y = val => hi === lo ? Hh / 2 : p + (hi - val) / (hi - lo) * (Hh - 2 * p);
+  const pts = v.map((val, i) => `${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(" ");
+  const last = v.length - 1;
+  return `<svg class="spark" viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">
+    <polyline points="${pts}" fill="none" stroke="#A79E90" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+    <circle cx="${x(last)}" cy="${y(v[last])}" r="4" fill="#fab219"/></svg>`;
+}
+function renderTanken(d) {
+  $("tankStale").textContent = stale(d.checked || d.built, 2);
+  if (d.price == null) { $("tankBody").textContent = "Keine Preise"; return; }
+  const v = d.verdict, t = d.timing;
+  let hint = "";
+  if (t && t.wait) hint = `Besser gegen ${t.hour} Uhr (−${Math.round(t.gain_ct)} ct)`;
+  else if (t && t.wait === false) hint = "Jetzt tanken passt";
+  const km = d.dist_km != null ? ` · ${String(d.dist_km).replace(".", ",")} km` : "";
+  $("tankBody").className = "";
+  $("tankBody").style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
+  $("tankBody").innerHTML = `
+    <div class="price">${priceHtml(d.price)}</div>
+    ${v ? `<span class="pill ${v.cls}">${esc(v.head)}</span>` : ""}
+    <div class="sub">${esc(d.station || "")}${km}${hint ? "<br>" + esc(hint) : ""}</div>
+    ${sparkSvg(d.lows)}`;
+}
+
+async function loadJson(url) {
+  const r = await fetch(url + "?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+let lastGassi = null;
+setInterval(() => { if (lastGassi) renderGassi(lastGassi); }, 60 * 1000);  // Countdown/Streifen minütlich
+async function refreshData() {
+  try { renderGassi(lastGassi = await loadJson(WETTER_URL)); }
+  catch { $("gassiStale").textContent = "nicht erreichbar"; if ($("gassiBody").textContent === "Lade …") $("gassiBody").textContent = "Noch keine Daten"; }
+  try { renderTanken(await loadJson(TANKEN_URL)); }
+  catch { $("tankStale").textContent = "nicht erreichbar"; if ($("tankBody").textContent === "Lade …") $("tankBody").textContent = "Noch keine Daten"; }
+}
+
+/* ---------- Einkaufsliste ---------- */
+let listData = Liste.cached();
+function renderList(errMsg) {
+  const body = $("listBody");
+  if (!Liste.token()) {
+    $("listState").textContent = "";
+    body.innerHTML = `<div class="setup-cta"><div>Mit dem Handy synchron halten</div><button id="openSetup">Einkaufsliste verbinden</button></div>`;
+    $("openSetup").onclick = openSetup;
+    return;
+  }
+  $("listState").innerHTML = errMsg ? `<span class="err">${esc(errMsg)}</span>` : "";
+  const items = [...listData.items].sort((a, b) => a.done - b.done);
+  const open = items.filter(i => !i.done).length, done = items.length - open;
+  const focused = document.activeElement && document.activeElement.id === "newItem";
+  const val = focused ? $("newItem").value : "";
+  body.innerHTML = `
+    <form class="add" id="addForm"><input id="newItem" placeholder="Was fehlt?" enterkeyhint="done" autocomplete="off"><button aria-label="Hinzufügen">＋</button></form>
+    <ul class="items">${items.map(i => `<li data-id="${i.id}" class="${i.done ? "done" : ""}"><span class="box"></span><span>${esc(i.text)}</span></li>`).join("")}</ul>
+    <div class="list-foot"><span>${open ? open + " offen" : "Alles da"}</span>${done ? `<button id="clearDone">${done} Erledigte entfernen</button>` : ""}</div>`;
+  if (focused) { $("newItem").value = val; $("newItem").focus(); }
+  $("addForm").onsubmit = e => {
+    e.preventDefault();
+    const t = $("newItem").value; if (!t.trim()) return;
+    $("newItem").value = "";
+    listData.items.push({ id: "tmp" + Date.now(), text: t.trim(), done: false });  // sofort zeigen
+    renderList(); $("newItem").focus();
+    run(Liste.add(t));
+  };
+  body.querySelectorAll(".items li").forEach(li => li.onclick = () => {
+    const it = listData.items.find(x => x.id === li.dataset.id); if (!it || it.id.startsWith("tmp")) return;
+    it.done = !it.done; renderList(); run(Liste.toggle(it.id));
+  });
+  if ($("clearDone")) $("clearDone").onclick = () => { listData.items = listData.items.filter(x => !x.done); renderList(); run(Liste.clearDone()); };
+}
+let busy = 0;
+async function run(p) {
+  busy++;
+  try { listData = await p; renderList(); }
+  catch (e) { renderList(e.message); }
+  finally { busy--; }
+}
+function refreshList() { if (Liste.token() && !busy) run(Liste.load()); }
+
+function openSetup() {
+  $("tokenLink").href = TOKEN_URL; $("tokenInput").value = ""; $("setupErr").textContent = "";
+  $("setup").showModal();
+}
+$("setupCancel").onclick = () => $("setup").close();
+$("setupSave").onclick = async () => {
+  const t = $("tokenInput").value.trim();
+  if (!t) { $("setupErr").textContent = "Bitte den Schlüssel einfügen."; return; }
+  $("setupErr").textContent = "Verbinde …";
+  try { listData = await Liste.setup(t); $("setup").close(); renderList(); }
+  catch (e) { $("setupErr").textContent = e.message; }
+};
+
+/* ---------- Fotos (nur lokal, IndexedDB) ---------- */
+const DB = {
+  db: null,
+  open() {
+    return this.db ? Promise.resolve(this.db) : new Promise((res, rej) => {
+      const r = indexedDB.open("kueche", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("photos", { keyPath: "id", autoIncrement: true });
+      r.onsuccess = () => res(this.db = r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async tx(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction("photos", mode), s = t.objectStore("photos");
+      const out = fn(s); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error);
+    });
+  },
+  keys() { return this.tx("readonly", s => s.getAllKeys()); },
+  get(id) { return this.tx("readonly", s => s.get(id)); },
+  add(blob) { return this.tx("readwrite", s => s.add({ blob, added: Date.now() })); },
+  del(id) { return this.tx("readwrite", s => s.delete(id)); },
+};
+
+// Auf max. 2048 px verkleinern -- spart Platz, das iPad zeigt eh nicht mehr.
+async function shrink(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 2048 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(b => r(b || file), "image/jpeg", 0.86));
+  } catch { return file; }
+}
+
+let photoIds = [], order = [], pos = -1, currentId = null, front = "layerA", urls = {}, slideTimer = null;
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+async function reloadPhotos() {
+  photoIds = await DB.keys();
+  $("photoEmpty").style.display = photoIds.length ? "none" : "";
+  $("photoCount").textContent = photoIds.length ? photoIds.length + (photoIds.length === 1 ? " Bild" : " Bilder") : "";
+  order = shuffle([...photoIds]); pos = -1;
+  if (!photoIds.length) { document.querySelectorAll(".layer").forEach(l => l.classList.remove("on")); currentId = null; }
+}
+async function showNext() {
+  if (!photoIds.length) return;
+  if (++pos >= order.length) { order = shuffle([...photoIds]); pos = 0; if (order.length > 1 && order[0] === currentId) order.push(order.shift()); }
+  const id = order[pos], rec = await DB.get(id);
+  if (!rec) return;
+  const back = front === "layerA" ? "layerB" : "layerA", L = $(back);
+  const old = urls[back]; const url = URL.createObjectURL(rec.blob); urls[back] = url;
+  const img = L.querySelector("img");
+  img.onload = () => {
+    L.querySelector(".bg").style.backgroundImage = `url("${url}")`;
+    L.classList.add("on"); $(front).classList.remove("on");
+    front = back; currentId = id;
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 2500);
+  };
+  img.src = url;
+}
+function startSlides() { clearInterval(slideTimer); showNext(); slideTimer = setInterval(showNext, SLIDE_SEC * 1000); }
+
+const pick = () => $("photoInput").click();
+$("addFirst").onclick = pick; $("addPhotos").onclick = e => { e.stopPropagation(); pick(); };
+$("photoInput").onchange = async e => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  $("photoCount").textContent = "Speichere …";
+  for (const f of files) await DB.add(await shrink(f));
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+  await reloadPhotos(); startSlides();
+};
+$("delPhoto").onclick = async e => {
+  e.stopPropagation();
+  if (currentId == null || !confirm("Dieses Bild aus dem Dashboard entfernen? (In deiner Mediathek bleibt es.)")) return;
+  await DB.del(currentId); await reloadPhotos(); startSlides();
+};
+let ctlTimer;
+$("photo").addEventListener("click", () => {
+  if (!photoIds.length) return;
+  $("photo").classList.add("show-ctl"); clearTimeout(ctlTimer);
+  ctlTimer = setTimeout(() => $("photo").classList.remove("show-ctl"), 6000);
+});
+
+/* ---------- Start ---------- */
+tickClock(); setInterval(tickClock, 1000);
+refreshData(); setInterval(refreshData, 10 * 60 * 1000);
+renderList(); refreshList(); setInterval(refreshList, 60 * 1000);
+reloadPhotos().then(startSlides).catch(() => {});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshData(); refreshList(); } });
+watchForUpdates(10);
+</script>
+</body>
+</html>
