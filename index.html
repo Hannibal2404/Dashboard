@@ -39,8 +39,8 @@ button:active{transform:scale(.97)}
 .grid{height:100dvh;display:grid;gap:var(--gap);
   padding:max(var(--gap),env(safe-area-inset-top)) max(var(--gap),env(safe-area-inset-right))
           max(var(--gap),env(safe-area-inset-bottom)) max(var(--gap),env(safe-area-inset-left));
-  grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);
-  grid-template-rows:auto minmax(0,1fr) minmax(0,1.15fr);
+  grid-template-columns:minmax(0,1.15fr) minmax(0,1.3fr) minmax(0,.7fr);
+  grid-template-rows:auto minmax(0,.8fr) minmax(0,1.6fr);
   grid-template-areas:"photo clock clock" "photo gassi tanken" "photo list list"}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px;
   min-width:0;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column}
@@ -79,7 +79,7 @@ button:active{transform:scale(.97)}
 
 /* Gassi */
 .gassi{grid-area:gassi}
-.big-v{font-family:var(--serif);font-size:clamp(30px,5.4vh,46px);font-weight:600;line-height:1.05;margin-top:10px}
+.big-v{font-family:var(--serif);font-size:clamp(28px,4.8vh,42px);font-weight:600;line-height:1.05;margin-top:10px}
 .sub{font-size:15px;color:var(--muted);margin-top:6px;line-height:1.35}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:999px;padding:3px 10px;margin-top:10px;align-self:flex-start}
 .pill.gut,.pill.good{background:rgba(12,163,12,.16);color:var(--good-ink)}
@@ -89,10 +89,12 @@ button:active{transform:scale(.97)}
 .gassi.hl-rain{animation:hlRain 2.4s ease-in-out infinite}
 @keyframes hlGood{50%{border-color:var(--good);box-shadow:0 0 0 2px rgba(12,163,12,.35),0 0 24px rgba(12,163,12,.25)}}
 @keyframes hlRain{50%{border-color:var(--warn);box-shadow:0 0 0 2px rgba(250,178,25,.35),0 0 24px rgba(250,178,25,.22)}}
-.alert{font-size:14px;font-weight:600;margin-top:8px;border-radius:8px;padding:4px 10px;align-self:flex-start}
+.alert{position:absolute;top:12px;right:14px;font-size:14px;font-weight:600;border-radius:8px;padding:3px 10px}
+.ghead{display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap}
+.ghead .big-v{margin-top:0}.ghead .pill{margin-top:0}
 .alert.good{background:rgba(12,163,12,.16);color:var(--good-ink)}
 .alert.rain{background:rgba(250,178,25,.14);color:var(--warn-ink)}
-.strip{display:flex;gap:2px;margin-top:auto;padding-top:12px;height:34px;position:relative}
+.strip{display:flex;gap:2px;margin-top:auto;padding-top:8px;height:26px;flex:none;position:relative}
 .strip i{flex:1;border-radius:3px;background:var(--line)}
 .strip i.gut{background:var(--good)}.strip i.mittel{background:var(--warn)}.strip i.schlecht{background:var(--bad)}
 .strip i.past{opacity:.25}
@@ -101,10 +103,11 @@ button:active{transform:scale(.97)}
 
 /* Tanken */
 .tanken{grid-area:tanken}
-.price{font-family:var(--serif);font-size:clamp(40px,7.5vh,64px);font-weight:600;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums}
+.price{font-family:var(--serif);font-size:clamp(36px,6.4vh,56px);white-space:nowrap;font-weight:600;line-height:1;margin-top:10px;font-variant-numeric:tabular-nums}
 .price sup{font-size:.5em;vertical-align:.75em;margin-left:1px}
 .price .eur{font-size:.42em;color:var(--muted);margin-left:6px}
-.spark{margin-top:auto;padding-top:10px;width:100%;height:46px}
+.spark{display:none}
+.tanken .sub{font-size:13px;margin-top:auto;padding-top:6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
 /* Einkaufsliste */
 .list{grid-area:list}
@@ -313,8 +316,8 @@ function renderGassi(d) {
   $("gassiBody").style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
   $("gassiBody").innerHTML = `
     ${alert ? `<div class="alert ${alert.cls}">${esc(alert.text)}</div>` : ""}
-    <div class="big-v">${esc(head)}</div>
-    <span class="pill ${rating}">${{ gut: "gut", mittel: "mittel", schlecht: "schlecht" }[rating]}</span>
+    <div class="ghead"><div class="big-v">${esc(head)}</div>
+    <span class="pill ${rating}">${{ gut: "gut", mittel: "mittel", schlecht: "schlecht" }[rating]}</span></div>
     <div class="sub">${esc(sub)}${wxLine ? "<br>" + wxLine : ""}${oTxt ? "<br>" + oTxt : ""}</div>
     <div class="strip">${strip}</div>
     <div class="strip-l"><span>5</span><span>12</span><span>22 Uhr</span></div>`;
@@ -343,8 +346,8 @@ function renderTanken(d) {
   if (d.price == null) { $("tankBody").textContent = "Keine Preise"; return; }
   const v = d.verdict, t = d.timing;
   let hint = "";
-  if (t && t.wait) hint = `Besser gegen ${t.hour} Uhr (−${Math.round(t.gain_ct)} ct)`;
-  else if (t && t.wait === false) hint = "Jetzt tanken passt";
+  if (t && t.wait) hint = `Besser ${t.hour} Uhr (−${Math.round(t.gain_ct)} ct)`;
+  else if (t && t.wait === false) hint = "Jetzt passt";
   const km = d.dist_km != null ? ` · ${String(d.dist_km).replace(".", ",")} km` : "";
   $("tankBody").className = "";
   $("tankBody").style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
