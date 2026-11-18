@@ -188,10 +188,12 @@ const Liste = {
       if (d.freq) delete d.freq[k];
     });
   },
-  addEvent(name, date, yearly) {
+  addEvent(name, date, yearly, time) {
     return this.change(d => {
       d.events = d.events || [];
-      d.events.push({ id: Date.now().toString(36), name: name.trim(), date, yearly: !!yearly });
+      const e = { id: Date.now().toString(36), name: name.trim(), date, yearly: !!yearly };
+      if (time) e.time = time;
+      d.events.push(e);
     });
   },
   removeEvent(id) { return this.change(d => { d.events = (d.events || []).filter(e => e.id !== id); }); },
@@ -314,11 +316,48 @@ function nextEvent(e, now = new Date()) {
   let t = new Date(e.yearly ? today.getFullYear() : y, m - 1, d);
   if (e.yearly && t < today) t = new Date(today.getFullYear() + 1, m - 1, d);
   const days = Math.round((t - today) / 864e5);
-  return days < 0 ? null : { ...e, when: t, days, age: e.yearly && y > 1900 ? t.getFullYear() - y : null };
+  if (days < 0) return null;
+  let at = null;                                         // genauer Zeitpunkt, falls Uhrzeit angegeben
+  if (/^\d{1,2}:\d{2}$/.test(e.time || "")) { const [h, mi] = e.time.split(":").map(Number); at = new Date(t); at.setHours(h, mi); }
+  if (at && at < now) return null;                       // heutiger Termin ist vorbei
+  const created = /^[0-9a-z]{6,}$/.test(e.id || "") ? parseInt(e.id, 36) : NaN;   // id = Anlegezeitpunkt
+  return { ...e, when: t, at, days, created: created > 1.6e12 && created < Date.now() ? created : null,
+           age: e.yearly && y > 1900 ? t.getFullYear() - y : null };
 }
 function upcomingEvents(data, withinDays = 9999) {
   return (data.events || []).map(e => nextEvent(e)).filter(e => e && e.days <= withinDays)
     .sort((a, b) => a.days - b.days);
+}
+// Symbol nach Stichwort, falls der Name nicht schon mit einem Emoji beginnt
+const EV_ICONS = [[/barbier|friseur|haare/i, "✂️"], [/zahnarzt|zahn/i, "🦷"], [/tierarzt/i, "🐾"],
+  [/arzt|praxis|termin.*dr|dr\.|klinik|physio/i, "🩺"], [/geburtstag|bday|b-day/i, "🎂"],
+  [/urlaub|flug|reise|ferien/i, "✈️"], [/hochzeit/i, "💍"], [/konzert|festival/i, "🎵"],
+  [/fußball|fussball|spiel|stadion/i, "⚽"], [/sport|gym|training|fitness/i, "🏋️"],
+  [/tüv|werkstatt|reifen|auto/i, "🚗"], [/party|feier/i, "🎉"], [/essen|restaurant|grillen/i, "🍽️"],
+  [/kino|film/i, "🎬"], [/\bamt\b|behörde|steuer/i, "📄"], [/besuch/i, "👋"]];
+function evIcon(e) {
+  if (/^\p{Extended_Pictographic}/u.test(e.name)) return "";
+  for (const [re, ic] of EV_ICONS) if (re.test(e.name)) return ic;
+  return e.yearly ? "🎂" : "📌";
+}
+function evTitle(e) {
+  const ic = evIcon(e);
+  return (ic ? ic + " " : "") + e.name + (e.age ? ` wird ${e.age}` : "");
+}
+// "Heute", "Morgen", "Di 1.12." bis 2 Wochen, danach "in 39 Tagen"
+const WD_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+function dayLabel(e) {
+  if (e.days === 0) return "Heute";
+  if (e.days === 1) return "Morgen";
+  if (e.days <= 14) return `${WD_SHORT[e.when.getDay()]} ${e.when.getDate()}.${e.when.getMonth() + 1}.`;
+  return `in ${e.days} Tagen`;
+}
+// Vorfreude-Balken: einmalige Termine, die beim Anlegen mind. 14 Tage weg waren
+function evProgress(e) {
+  if (e.yearly || !e.created) return null;
+  const total = (e.when - e.created) / 864e5;
+  if (total < 14) return null;
+  return Math.max(0, Math.min(1, 1 - e.days / total));
 }
 function daysText(n) { return n === 0 ? "heute" : n === 1 ? "morgen" : n === 2 ? "übermorgen" : `in ${n} Tagen`; }
 function bindChips(root, onAdd, onHide, onToggle) {

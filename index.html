@@ -66,15 +66,23 @@ button:active{transform:scale(.97)}
 .count{font-size:12px;color:var(--muted);align-self:center}
 
 /* Uhr */
-.clock{grid-area:clock;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding:12px 22px}
+.clock{grid-area:clock;flex-direction:row;align-items:center;justify-content:space-between;gap:14px;padding:12px 22px}
 .time{font-family:var(--serif);font-size:clamp(56px,9.5vh,92px);font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .date{font-size:clamp(17px,2.6vh,22px);color:var(--muted);margin-top:4px}
 .now-wx{text-align:right;flex:none}
-.cd{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;align-items:center;text-align:center;font-size:clamp(15px,2.3vh,19px);color:var(--muted)}
-.cd div{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cd b{color:var(--ink);font-weight:600}
-.cd .soon b{color:var(--warn-ink)}
-.now-wx .t{font-size:clamp(34px,6vh,52px);font-weight:600;line-height:1}
+.cd{flex:1;min-width:0;display:grid;grid-template-columns:auto auto minmax(0,1fr);column-gap:10px;row-gap:5px;
+  align-items:center;align-content:center;font-size:clamp(15px,2.1vh,17px);color:var(--muted);max-width:520px;margin:0 auto}
+.cd .ag{display:contents}
+.cd .d{font-size:.78em;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:var(--faint);white-space:nowrap}
+.cd .h{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.cd .n{color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd .w{margin-left:6px}
+.cd .bar{display:block;height:4px;border-radius:2px;background:var(--line);margin-top:3px;overflow:hidden}
+.cd .bar b{display:block;height:100%;background:var(--warn);border-radius:2px}
+.cd .today .d,.cd .today .h,.cd .today .n{color:var(--warn-ink)}
+.cd .pulse .n{animation:agPulse 1.6s ease-in-out infinite}
+@keyframes agPulse{50%{opacity:.35}}
+.now-wx .t{font-size:clamp(30px,5vh,42px);font-weight:600;line-height:1}
 .now-wx .s{font-size:14px;color:var(--muted);margin-top:4px}
 
 /* Gassi */
@@ -224,7 +232,7 @@ dialog .primary{background:var(--warn);color:#1b1408;border:0;font-weight:700}
   <div class="row"><button id="setupCancel">Abbrechen</button><button class="primary" id="setupSave">Verbinden</button></div>
 </dialog>
 
-<script src="lib.js?v=7"></script>
+<script src="lib.js?v=8"></script>
 <script>
 const WETTER_URL = "https://hannibal2404.github.io/Wetter/dashboard.json";
 const TANKEN_URL = "https://hannibal2404.github.io/Tanken/dashboard.json";
@@ -240,14 +248,41 @@ function tickClock() {
   const d = new Date();
   $("time").textContent = hhmm(d);
   $("date").textContent = `${WT[d.getDay()]}, ${d.getDate()}. ${MO[d.getMonth()]}`;
-  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) renderCountdowns();
 }
 
 /* ---------- Countdowns (aus der Einkaufslisten-Datei, gepflegt am Handy) ---------- */
 const EV_DAYS = 60;      // nur zeigen, was in den naechsten 60 Tagen ansteht
+const EV_MAX = 3;
+// Wetter zum Termin (heute/morgen): mit Uhrzeit genau diese Stunde, sonst 8-20 Uhr
+let evWx = null;
+async function loadEvWx() {
+  try {
+    evWx = (await loadJson(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+      "&hourly=temperature_2m,precipitation_probability&forecast_days=2&timezone=Europe%2FBerlin")).hourly;
+  } catch {}
+}
+function wxHint(e) {
+  if (!evWx || e.days > 1) return "";
+  const day = e.when.toLocaleDateString("sv");
+  const idx = evWx.time.map((t, i) => [t, i]).filter(([t]) => t.startsWith(day)).map(([t, i]) => ({ h: +t.slice(11, 13), i }));
+  const hrs = e.at ? idx.filter(x => x.h === e.at.getHours()) : idx.filter(x => x.h >= 8 && x.h <= 20);
+  if (!hrs.length) return "";
+  const rain = Math.max(...hrs.map(x => evWx.precipitation_probability[x.i] ?? 0));
+  const cold = Math.min(...hrs.map(x => evWx.temperature_2m[x.i] ?? 99));
+  if (rain >= (e.at ? 50 : 60)) return `<span title="Regen ${rain} %">☂️</span>`;
+  if (cold <= 0) return `<span title="${Math.round(cold)}°">🧣</span>`;
+  return "";
+}
 function renderCountdowns() {
-  const ev = upcomingEvents(listData, EV_DAYS).slice(0, 2);
-  $("cd").innerHTML = ev.map(e => `<div class="${e.days <= 2 ? "soon" : ""}">${esc(e.name)}${e.age ? ` (${e.age})` : ""} · <b>${daysText(e.days)}</b></div>`).join("");
+  const now = Date.now();
+  const ev = upcomingEvents(listData, EV_DAYS).sort((a, b) => a.days - b.days || ((a.at || 0) - (b.at || 0))).slice(0, EV_MAX);
+  $("cd").innerHTML = ev.map(e => {
+    const prog = evProgress(e), soon = e.at && e.at - now > 0 && e.at - now <= 36e5;
+    const cls = (e.days === 0 ? "today" : "") + (soon ? " pulse" : "");
+    return `<div class="ag ${cls}"><span class="d">${esc(dayLabel(e))}</span><span class="h">${e.at ? hhmm(e.at) : ""}</span>` +
+      `<span class="n">${esc(evTitle(e))}${wxHint(e) ? `<span class="w">${wxHint(e)}</span>` : ""}` +
+      `${prog != null ? `<i class="bar"><b style="width:${Math.round(prog * 100)}%"></b></i>` : ""}</span></div>`;
+  }).join("");
 }
 
 /* ---------- Gassi ---------- */
@@ -323,7 +358,7 @@ function renderGassi(d) {
     <div class="strip-l"><span>5</span><span>12</span><span>22 Uhr</span></div>`;
 
   if (d.now_temp != null)
-    $("nowWx").innerHTML = `<div class="t">${wxIcon(d.now_kind, H)} ${d.now_temp}°</div><div class="s">Magdeburg</div>`;
+    $("nowWx").innerHTML = `<div class="t">${wxIcon(d.now_kind, H)} ${d.now_temp}°</div>`;
 }
 
 /* ---------- Tanken ---------- */
@@ -359,7 +394,7 @@ function renderTanken(d) {
 }
 
 async function loadJson(url) {
-  const r = await fetch(url + "?t=" + Date.now(), { cache: "no-store" });
+  const r = await fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
@@ -379,9 +414,9 @@ async function loadRain() {
   } catch { rainSoon = null; }
 }
 let lastGassi = null;
-setInterval(() => { if (lastGassi) renderGassi(lastGassi); }, 60 * 1000);  // Countdown/Streifen minütlich
+setInterval(() => { if (lastGassi) renderGassi(lastGassi); renderCountdowns(); }, 60 * 1000);  // Countdown/Streifen minütlich
 async function refreshData() {
-  await loadRain();
+  await Promise.all([loadRain(), loadEvWx()]); renderCountdowns();
   try { renderGassi(lastGassi = await loadJson(WETTER_URL)); }
   catch { $("gassiStale").textContent = "nicht erreichbar"; if ($("gassiBody").textContent === "Lade …") $("gassiBody").textContent = "Noch keine Daten"; }
   try { renderTanken(await loadJson(TANKEN_URL)); }

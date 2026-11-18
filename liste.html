@@ -56,6 +56,7 @@ li.done .offer{display:none}
 .ev li .d{color:var(--muted);font-size:14px;white-space:nowrap}
 .ev form{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .ev form input[type=text]{flex:1 1 100%;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
+.ev form input[type=time]{width:110px;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px}
 .ev form input[type=date]{flex:1;min-width:0;background:var(--chip);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:16px}
 .ev form label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:15px}
 .ev form button{background:var(--warn);color:#1b1408;border:0;font-weight:700}
@@ -79,7 +80,7 @@ footer button{font-size:13px;background:none;border:0;color:var(--faint);text-de
 <div id="app"></div>
 <footer id="foot"></footer>
 
-<script src="lib.js?v=7"></script>
+<script src="lib.js?v=8"></script>
 <script>
 const $ = id => document.getElementById(id);
 let data = Liste.cached(), busy = 0, evOpen = false;
@@ -119,18 +120,18 @@ function render(err) {
     ${open.length ? `<ul>${open.map(li).join("")}</ul>` : `<div class="empty">Alles da 🎉</div>`}
     ${done.length ? `<div class="sep"><span>Im Wagen (${done.length})</span><button id="clr">Entfernen</button></div><ul>${done.map(li).join("")}</ul>` : ""}
     <details class="ev" id="evBox"${evOpen ? " open" : ""}><summary>📅 Countdowns aufs iPad (${evs.length}) ▾</summary>
-      ${evs.length ? `<ul>${evs.map(e => `<li data-ev="${e.id}"><span class="t">${esc(e.name)}${e.age ? ` (${e.age})` : ""}<br><span class="d">${fmtD(e)}${e.yearly ? " · jährlich" : ""} · ${daysText(e.days)}</span></span><button class="x" aria-label="Löschen">×</button></li>`).join("")}</ul>` : ""}
-      <form id="evForm"><input type="text" id="evName" placeholder="z. B. 🎂 Mama oder ✈️ Urlaub" autocomplete="off">
-        <input type="date" id="evDate" required><label><input type="checkbox" id="evYear"> jährlich</label><button>Hinzufügen</button></form>
-      <p class="hint">Das iPad zeigt unter der Uhr, was in den nächsten 60 Tagen ansteht. „Jährlich“ für Geburtstage: dann mit Geburtsjahr eintragen, das Alter erscheint dahinter.</p>
+      ${evs.length ? `<ul>${evs.map(e => `<li data-ev="${e.id}"><span class="t">${esc(evTitle(e))}<br><span class="d">${fmtD(e)}${e.at ? ", " + e.time + " Uhr" : ""}${e.yearly ? " · jährlich" : ""} · ${daysText(e.days)}</span></span><button class="x" aria-label="Löschen">×</button></li>`).join("")}</ul>` : ""}
+      <form id="evForm"><input type="text" id="evName" placeholder="z. B. Barbier, Mama Geburtstag, Urlaub" autocomplete="off">
+        <input type="date" id="evDate" required><input type="time" id="evTime" aria-label="Uhrzeit (optional)"><label><input type="checkbox" id="evYear"> jährlich</label><button>Hinzufügen</button></form>
+      <p class="hint">Das iPad zeigt neben der Uhr die nächsten 3 Termine (60 Tage). Uhrzeit ist optional: Mit Uhrzeit gibt es das Wetter genau zur Stunde und kurz vorher ein Blinken. Symbole kommen automatisch (Barbier ✂️, Zahnarzt 🦷 …). „Jährlich“ mit Geburtsjahr zeigt das Alter.</p>
     </details>`;
   $("evBox").ontoggle = () => { evOpen = $("evBox").open; };
   $("evForm").onsubmit = e => {
     e.preventDefault();
-    const n = $("evName").value.trim(), d = $("evDate").value, y = $("evYear").checked;
+    const n = $("evName").value.trim(), d = $("evDate").value, y = $("evYear").checked, tm = $("evTime").value;
     if (!n || !d) return;
-    data.events = [...(data.events || []), { id: "tmp" + Date.now(), name: n, date: d, yearly: y }];
-    render(); go(Liste.addEvent(n, d, y));
+    data.events = [...(data.events || []), { id: "tmp" + Date.now(), name: n, date: d, yearly: y, ...(tm ? { time: tm } : {}) }];
+    render(); go(Liste.addEvent(n, d, y, tm));
   };
   app.querySelectorAll("li[data-ev]").forEach(el => el.querySelector(".x").onclick = () => {
     const id = el.dataset.ev; if (id.startsWith("tmp")) return;
